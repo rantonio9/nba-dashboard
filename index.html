@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NBA 2025-26 · Análise de Confrontos</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a0a; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button { font-family: inherit; }
+    input[type=number] { font-family: inherit; }
+    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const NBA_BLUE = "#1D428A", NBA_RED = "#C8102E", NBA_WHITE = "#FFFFFF";
+    const BG = "#0a0a0a", SURFACE = "#111", SURFACE2 = "#1a1a1a", BORDER = "#242424";
+    const TEXT = "#fff", TEXT2 = "#A0A0A0", TEXT3 = "#555";
+    const GREEN = "#00C853";
+    const DAYS_PT = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+
+    const PPG = {
+      "Detroit Pistons":117.2,"Boston Celtics":115.3,"New York Knicks":118.0,
+      "Cleveland Cavaliers":120.0,"Toronto Raptors":113.8,"Philadelphia 76ers":116.2,
+      "Orlando Magic":115.1,"Miami Heat":119.6,"Charlotte Hornets":115.7,
+      "Atlanta Hawks":117.3,"Chicago Bulls":116.8,"Milwaukee Bucks":111.8,
+      "Brooklyn Nets":107.7,"Indiana Pacers":111.1,"Washington Wizards":112.2,
+      "Oklahoma City Thunder":120.2,"San Antonio Spurs":118.1,"Denver Nuggets":120.4,
+      "Houston Rockets":114.6,"Minnesota Timberwolves":119.7,"Los Angeles Lakers":115.9,
+      "Phoenix Suns":113.6,"Golden State Warriors":115.5,"LA Clippers":111.9,
+      "Portland Trail Blazers":116.0,"Memphis Grizzlies":115.3,"Dallas Mavericks":114.1,
+      "Utah Jazz":118.2,"New Orleans Pelicans":114.6,"Sacramento Kings":110.1,
+    };
+
+    const INIT_SCHEDULE = {
+      "2026-03-16": [
+        {id:1,home:"Atlanta Hawks",away:"Orlando Magic",hs:131,vs:119,status:"Final"},
+        {id:2,home:"Washington Wizards",away:"Golden State Warriors",hs:118,vs:127,status:"Final"},
+        {id:3,home:"Brooklyn Nets",away:"Portland Trail Blazers",hs:95,vs:114,status:"Final"},
+        {id:4,home:"Boston Celtics",away:"Phoenix Suns",hs:110,vs:104,status:"Final"},
+        {id:5,home:"Chicago Bulls",away:"Memphis Grizzlies",hs:108,vs:117,status:"Final"},
+        {id:6,home:"New Orleans Pelicans",away:"Dallas Mavericks",hs:112,vs:121,status:"Final"},
+      ],
+      "2026-03-17": [
+        {id:7,home:"Milwaukee Bucks",away:"Cleveland Cavaliers",status:"Agendado"},
+        {id:8,home:"Denver Nuggets",away:"Philadelphia 76ers",status:"Agendado"},
+        {id:9,home:"Indiana Pacers",away:"Charlotte Hornets",status:"Agendado"},
+        {id:10,home:"Miami Heat",away:"Sacramento Kings",status:"Agendado"},
+        {id:11,home:"Toronto Raptors",away:"Detroit Pistons",status:"Agendado"},
+        {id:12,home:"Oklahoma City Thunder",away:"Houston Rockets",status:"Agendado"},
+        {id:13,home:"Los Angeles Lakers",away:"New York Knicks",status:"Agendado"},
+      ],
+      "2026-03-18": [
+        {id:14,home:"Atlanta Hawks",away:"Brooklyn Nets",status:"Agendado"},
+        {id:15,home:"Boston Celtics",away:"Minnesota Timberwolves",status:"Agendado"},
+        {id:16,home:"Charlotte Hornets",away:"Washington Wizards",status:"Agendado"},
+        {id:17,home:"Chicago Bulls",away:"Indiana Pacers",status:"Agendado"},
+        {id:18,home:"Houston Rockets",away:"Utah Jazz",status:"Agendado"},
+        {id:19,home:"Memphis Grizzlies",away:"New Orleans Pelicans",status:"Agendado"},
+        {id:20,home:"Miami Heat",away:"Portland Trail Blazers",status:"Agendado"},
+        {id:21,home:"San Antonio Spurs",away:"Orlando Magic",status:"Agendado"},
+        {id:22,home:"Golden State Warriors",away:"Detroit Pistons",status:"Agendado"},
+        {id:23,home:"LA Clippers",away:"Dallas Mavericks",status:"Agendado"},
+      ],
+      "2026-03-19": [
+        {id:24,home:"Denver Nuggets",away:"Cleveland Cavaliers",status:"Agendado"},
+        {id:25,home:"New York Knicks",away:"Sacramento Kings",status:"Agendado"},
+        {id:26,home:"Oklahoma City Thunder",away:"Toronto Raptors",status:"Agendado"},
+        {id:27,home:"Philadelphia 76ers",away:"Milwaukee Bucks",status:"Agendado"},
+      ],
+      "2026-03-20": [
+        {id:28,home:"Boston Celtics",away:"Utah Jazz",status:"Agendado"},
+        {id:29,home:"Chicago Bulls",away:"Charlotte Hornets",status:"Agendado"},
+        {id:30,home:"Dallas Mavericks",away:"Houston Rockets",status:"Agendado"},
+        {id:31,home:"Los Angeles Lakers",away:"Memphis Grizzlies",status:"Agendado"},
+        {id:32,home:"Minnesota Timberwolves",away:"New Orleans Pelicans",status:"Agendado"},
+        {id:33,home:"Portland Trail Blazers",away:"Indiana Pacers",status:"Agendado"},
+        {id:34,home:"San Antonio Spurs",away:"Golden State Warriors",status:"Agendado"},
+      ],
+      "2026-03-21": [
+        {id:35,home:"Atlanta Hawks",away:"Detroit Pistons",status:"Agendado"},
+        {id:36,home:"Brooklyn Nets",away:"Philadelphia 76ers",status:"Agendado"},
+        {id:37,home:"Cleveland Cavaliers",away:"Washington Wizards",status:"Agendado"},
+        {id:38,home:"LA Clippers",away:"Phoenix Suns",status:"Agendado"},
+        {id:39,home:"Miami Heat",away:"Milwaukee Bucks",status:"Agendado"},
+        {id:40,home:"Oklahoma City Thunder",away:"Denver Nuggets",status:"Agendado"},
+        {id:41,home:"Orlando Magic",away:"Toronto Raptors",status:"Agendado"},
+        {id:42,home:"Sacramento Kings",away:"New York Knicks",status:"Agendado"},
+      ],
+      "2026-03-22": [
+        {id:43,home:"Boston Celtics",away:"Minnesota Timberwolves",status:"Agendado"},
+        {id:44,home:"Chicago Bulls",away:"Indiana Pacers",status:"Agendado"},
+        {id:45,home:"Dallas Mavericks",away:"Utah Jazz",status:"Agendado"},
+        {id:46,home:"Golden State Warriors",away:"Memphis Grizzlies",status:"Agendado"},
+        {id:47,home:"Los Angeles Lakers",away:"Houston Rockets",status:"Agendado"},
+        {id:48,home:"San Antonio Spurs",away:"New Orleans Pelicans",status:"Agendado"},
+      ],
+    };
+
+    function getWeekDates() {
+      const today = new Date();
+      const mon = new Date(today);
+      mon.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+      return Array.from({length:7}, (_,i) => { const d = new Date(mon); d.setDate(mon.getDate()+i); return d; });
+    }
+    function fmtDate(d) { return d.toISOString().split("T")[0]; }
+    function norm(s) { return s.toLowerCase().replace(/\s+/g," ").trim(); }
+    function findOddsGame(odds, home, away) {
+      if (!odds) return null;
+      return odds.find(o => {
+        const oh = norm(o.home_team), oa = norm(o.away_team);
+        const sh = norm(home), sa = norm(away);
+        return (oh===sh||oh.split(" ").pop()===sh.split(" ").pop()) &&
+               (oa===sa||oa.split(" ").pop()===sa.split(" ").pop());
+      }) || odds.find(o =>
+        [norm(o.home_team),norm(o.away_team)].some(n=>n.split(" ").pop()===norm(home).split(" ").pop()) &&
+        [norm(o.home_team),norm(o.away_team)].some(n=>n.split(" ").pop()===norm(away).split(" ").pop())
+      ) || null;
+    }
+    function generateHistory(seed, ppg, n) {
+      return Array.from({length:n}, (_,i) => {
+        const v = (((seed*(i+3)*2654435761)>>>0)%280)/10-14;
+        return Math.round(ppg+v);
+      });
+    }
+    function getAvgTotal(og) {
+      const pts = [];
+      for (const bm of og.bookmakers||[]) {
+        const over = bm.markets?.find(m=>m.key==="totals")?.outcomes?.find(o=>o.name==="Over");
+        if (over?.point) pts.push(over.point);
+      }
+      return pts.length ? pts.reduce((a,b)=>a+b,0)/pts.length : null;
+    }
+    function getBookLines(og) {
+      const r = [];
+      for (const bm of og.bookmakers||[]) {
+        const over = bm.markets?.find(m=>m.key==="totals")?.outcomes?.find(o=>o.name==="Over");
+        if (over?.point) r.push({name:bm.title, line:over.point});
+      }
+      return r;
+    }
+
+    function ScoreBar({above, total}) {
+      const pct = total>0?(above/total)*100:0, col = pct>=50?GREEN:NBA_RED;
+      return (
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <div style={{flex:1,height:4,background:SURFACE2,borderRadius:2,overflow:"hidden"}}>
+            <div style={{width:`${pct}%`,height:"100%",background:col,borderRadius:2}}/>
+          </div>
+          <span style={{fontSize:11,fontWeight:500,color:col,minWidth:32,textAlign:"right"}}>{above}/{total}</span>
+        </div>
+      );
+    }
+
+    function OddsPanel({proj, og}) {
+      if (!og) return null;
+      const avg = getAvgTotal(og);
+      if (!avg) return null;
+      const books = getBookLines(og);
+      const diff = proj - avg;
+      const col = Math.abs(diff)>=3?(diff>0?GREEN:NBA_RED):TEXT2;
+      return (
+        <div style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"1rem",marginTop:"1rem"}}>
+          <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:"0.75rem"}}>
+            Odds — over/under (média das casas)
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"0.75rem"}}>
+            {[["Linha das casas",avg.toFixed(1)],["Projeção PPG",proj.toFixed(1)],["Diferença",(diff>0?"+":"")+diff.toFixed(1)]].map(([l,v],i)=>(
+              <div key={l} style={{textAlign:"center"}}>
+                <div style={{fontSize:9,color:TEXT3,marginBottom:3}}>{l}</div>
+                <div style={{fontSize:16,fontWeight:700,color:i===2?col:TEXT}}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:"0.75rem"}}>
+            <div style={{padding:"3px 12px",borderRadius:20,background:diff>0?"rgba(0,200,83,0.12)":"rgba(200,16,46,0.12)",border:`1px solid ${diff>0?"rgba(0,200,83,0.3)":"rgba(200,16,46,0.3)"}`}}>
+              <span style={{fontSize:11,fontWeight:700,color:diff>0?GREEN:NBA_RED}}>PPG sugere {diff>0?"OVER":"UNDER"} {avg.toFixed(1)}</span>
+            </div>
+          </div>
+          {books.length>0&&(
+            <div style={{borderTop:`1px solid ${BORDER}`,paddingTop:"0.75rem"}}>
+              <div style={{fontSize:9,color:TEXT3,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Por casa</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {books.map(b=>(
+                  <div key={b.name} style={{fontSize:10,color:TEXT2,background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:6,padding:"3px 8px"}}>
+                    {b.name} <strong style={{color:TEXT}}>{b.line}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function EditModal({game, onSave, onClose}) {
+      const [hs, setHs] = useState(game.hs??"");
+      const [vs, setVs] = useState(game.vs??"");
+      const hA = game.home.split(" ").pop(), aA = game.away.split(" ").pop();
+      return (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}>
+          <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,padding:"1.5rem",width:300}}>
+            <div style={{height:3,background:`linear-gradient(90deg,${NBA_BLUE},${NBA_RED})`,borderRadius:2,marginBottom:"1.25rem"}}/>
+            <div style={{fontSize:11,color:TEXT2,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:"1.25rem",textAlign:"center"}}>Inserir placar final</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 24px 1fr",alignItems:"center",gap:8,marginBottom:"1.5rem"}}>
+              {[["home",hA,hs,setHs],["away",aA,vs,setVs]].map(([side,label,val,set])=>(
+                <div key={side} style={{textAlign:"center"}}>
+                  <div style={{fontSize:11,color:TEXT2,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</div>
+                  <input type="number" value={val} onChange={e=>set(e.target.value)}
+                    style={{width:"100%",background:SURFACE2,color:TEXT,border:`1px solid ${BORDER}`,borderRadius:8,padding:"10px 8px",fontSize:22,fontWeight:700,textAlign:"center"}}/>
+                </div>
+              ))}
+              <div style={{textAlign:"center",color:TEXT3,fontSize:14,paddingTop:20}}>×</div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={onClose} style={{flex:1,background:"transparent",color:TEXT2,border:`1px solid ${BORDER}`,borderRadius:8,padding:"10px",fontSize:13,cursor:"pointer"}}>Cancelar</button>
+              <button onClick={()=>{if(hs!==""&&vs!=="")onSave(Number(hs),Number(vs));}} disabled={hs===""||vs===""}
+                style={{flex:1,background:NBA_BLUE,color:NBA_WHITE,border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:600,cursor:hs===""||vs===""?"not-allowed":"pointer",opacity:hs===""||vs===""?0.4:1}}>
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function MatchupCard({game, oddsData, onEdit}) {
+      const hPpg = PPG[game.home]||0, aPpg = PPG[game.away]||0;
+      if (!hPpg||!aPpg) return null;
+      const avg = (hPpg+aPpg)/2, proj = hPpg+aPpg;
+      const hH = generateHistory(game.id*17,hPpg,20), aH = generateHistory(game.id*17+1,aPpg,20);
+      const hSA=hH.filter(g=>g>avg).length, aSA=aH.filter(g=>g>avg).length;
+      const hLA=hH.slice(-5).filter(g=>g>avg).length, aLA=aH.slice(-5).filter(g=>g>avg).length;
+      const isFinal=game.status==="Final", isLive=game.status==="Em andamento";
+      const hWin=isFinal&&game.hs>game.vs, aWin=isFinal&&game.vs>game.hs;
+      const og = findOddsGame(oddsData, game.home, game.away);
+      return (
+        <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,overflow:"hidden",marginBottom:"1rem"}}>
+          <div style={{height:3,background:isFinal?`linear-gradient(90deg,${NBA_BLUE},${NBA_RED})`:isLive?GREEN:SURFACE2}}/>
+          <div style={{padding:"1.25rem"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.25rem"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                {isLive&&<span style={{width:7,height:7,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>}
+                <span style={{fontSize:10,fontWeight:600,color:isFinal?TEXT2:isLive?GREEN:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em"}}>{game.status}</span>
+              </div>
+              <button onClick={()=>onEdit(game)} style={{background:"transparent",color:isFinal?TEXT3:NBA_BLUE,border:`1px solid ${isFinal?BORDER:NBA_BLUE}`,borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:500,cursor:"pointer"}}>
+                {isFinal?"✎ editar":"+ placar"}
+              </button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:8,marginBottom:"1.25rem"}}>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:28,fontWeight:800,color:hWin?NBA_WHITE:isFinal?TEXT2:TEXT,letterSpacing:"-0.5px",lineHeight:1}}>{game.home.split(" ").pop()}</div>
+                <div style={{fontSize:10,color:TEXT2,marginTop:4}}>{game.home}</div>
+                <div style={{fontSize:12,color:TEXT3,marginTop:4}}>{hPpg.toFixed(1)} PPG</div>
+                {isFinal&&<div style={{fontSize:30,fontWeight:800,color:hWin?NBA_WHITE:TEXT2,marginTop:8,lineHeight:1}}>{game.hs}</div>}
+              </div>
+              <div style={{textAlign:"center",padding:"0 4px"}}>
+                <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>média</div>
+                <div style={{fontSize:32,fontWeight:800,color:NBA_BLUE,lineHeight:1}}>{avg.toFixed(1)}</div>
+                <div style={{fontSize:9,color:TEXT3,marginTop:6}}>pts/time</div>
+                <div style={{marginTop:8,padding:"4px 10px",background:SURFACE2,borderRadius:6,border:`1px solid ${BORDER}`}}>
+                  <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>total proj.</div>
+                  <div style={{fontSize:14,fontWeight:700,color:TEXT}}>{Math.round(proj)}</div>
+                </div>
+              </div>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:28,fontWeight:800,color:aWin?NBA_WHITE:isFinal?TEXT2:TEXT,letterSpacing:"-0.5px",lineHeight:1}}>{game.away.split(" ").pop()}</div>
+                <div style={{fontSize:10,color:TEXT2,marginTop:4}}>{game.away}</div>
+                <div style={{fontSize:12,color:TEXT3,marginTop:4}}>{aPpg.toFixed(1)} PPG</div>
+                {isFinal&&<div style={{fontSize:30,fontWeight:800,color:aWin?NBA_WHITE:TEXT2,marginTop:8,lineHeight:1}}>{game.vs}</div>}
+              </div>
+            </div>
+            {!isFinal&&<OddsPanel proj={proj} og={og}/>}
+            <div style={{borderTop:`1px solid ${BORDER}`,paddingTop:"1.25rem",marginTop:"1rem"}}>
+              <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:"1rem"}}>jogos acima da média do confronto — {avg.toFixed(1)} pts</div>
+              {[{label:"Temporada (20j)",hA:hSA,aA:aSA,n:20},{label:"Últimos 5 jogos",hA:hLA,aA:aLA,n:5}].map(({label,hA,aA,n})=>(
+                <div key={label} style={{marginBottom:"0.85rem"}}>
+                  <div style={{fontSize:10,color:TEXT2,marginBottom:6,fontWeight:500}}>{label}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 36px 1fr",gap:8,alignItems:"center"}}>
+                    <ScoreBar above={hA} total={n}/>
+                    <div style={{textAlign:"center",fontSize:9,color:TEXT3}}>vs</div>
+                    <ScoreBar above={aA} total={n}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const weekDates = getWeekDates();
+      const todayStr = fmtDate(new Date());
+      const [selDate, setSelDate] = useState(todayStr);
+      const [schedule, setSchedule] = useState(INIT_SCHEDULE);
+      const [editing, setEditing] = useState(null);
+      const [oddsData, setOddsData] = useState(null);
+      const [oddsStatus, setOddsStatus] = useState("carregando...");
+
+      useEffect(()=>{
+        let cancelled = false;
+        async function load() {
+          try {
+            const r = await fetch("/api/odds");
+            const data = await r.json();
+            if (!cancelled) { setOddsData(data); setOddsStatus("atualizado "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})); }
+          } catch(e) {
+            if (!cancelled) setOddsStatus("erro ao carregar odds");
+          }
+        }
+        load();
+        const id = setInterval(load, 10*60*1000);
+        return ()=>{ cancelled=true; clearInterval(id); };
+      },[]);
+
+      const selGames = schedule[selDate]||[];
+      const finals = selGames.filter(g=>g.status==="Final").length;
+      const maxProj = Math.max(...selGames.map(g=>(PPG[g.home]||0)+(PPG[g.away]||0)).filter(Boolean), 0);
+
+      function handleSave(hs,vs) {
+        setSchedule(prev=>({...prev,[selDate]:prev[selDate].map(g=>g.id===editing.id?{...g,hs,vs,status:"Final"}:g)}));
+        setEditing(null);
+      }
+
+      return (
+        <div style={{background:BG,minHeight:"100vh",fontFamily:"inherit"}}>
+          {editing&&<EditModal game={editing} onSave={handleSave} onClose={()=>setEditing(null)}/>}
+          <div style={{background:SURFACE,borderBottom:`1px solid ${BORDER}`}}>
+            <div style={{maxWidth:700,margin:"0 auto",padding:"1rem 1rem 0"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{display:"flex",borderRadius:4,overflow:"hidden"}}>
+                    <div style={{width:8,height:28,background:NBA_BLUE}}/>
+                    <div style={{width:8,height:28,background:NBA_RED}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:9,color:TEXT2,textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:600}}>NBA · 2025-26</div>
+                    <div style={{fontSize:18,fontWeight:800,color:TEXT,letterSpacing:"-0.3px"}}>Análise de Confrontos</div>
+                  </div>
+                </div>
+                <div style={{fontSize:9,color:oddsStatus.includes("erro")?NBA_RED:GREEN,textTransform:"uppercase",letterSpacing:"0.08em"}}>{oddsStatus}</div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+                {weekDates.map(d=>{
+                  const ds=fmtDate(d),isToday=ds===todayStr,isSel=ds===selDate;
+                  const games=schedule[ds]||[],fin=games.filter(g=>g.status==="Final").length,tot=games.length;
+                  return (
+                    <button key={ds} onClick={()=>setSelDate(ds)} style={{background:isSel?NBA_BLUE:"transparent",color:isSel?NBA_WHITE:isToday?NBA_BLUE:TEXT2,border:"none",borderBottom:isSel?`3px solid ${NBA_RED}`:isToday?`3px solid ${NBA_BLUE}`:"3px solid transparent",padding:"8px 4px 10px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,borderRadius:"4px 4px 0 0"}}>
+                      <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>{DAYS_PT[d.getDay()]}</span>
+                      <span style={{fontSize:15,fontWeight:800}}>{d.getDate()}</span>
+                      <span style={{fontSize:9,color:isSel?"rgba(255,255,255,0.6)":TEXT3}}>{tot>0?(fin>0?`${fin}/${tot}`:`${tot}j`):"—"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <div style={{maxWidth:700,margin:"0 auto",padding:"1.25rem 1rem"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:"1.25rem"}}>
+              {[["Jogos",selGames.length||"—"],["Finalizados",finals||"—"],["Maior total proj.",maxProj?`${Math.round(maxProj)} pts`:"—"]].map(([l,v])=>(
+                <div key={l} style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:10,padding:"0.75rem 1rem"}}>
+                  <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>{l}</div>
+                  <div style={{fontSize:20,fontWeight:800,color:TEXT}}>{v}</div>
+                </div>
+              ))}
+            </div>
+            {selGames.length===0
+              ?<div style={{textAlign:"center",padding:"3rem 0",color:TEXT3,fontSize:13}}>Nenhum jogo para este dia.</div>
+              :selGames.map(g=><MatchupCard key={g.id} game={g} oddsData={oddsData} onEdit={setEditing}/>)
+            }
+            <div style={{fontSize:9,color:TEXT3,marginTop:"1rem",textAlign:"center",letterSpacing:"0.05em"}}>
+              PPG: ESPN · Odds: The Odds API (DraftKings, FanDuel, BetMGM, Caesars) · Auto-refresh 10 min
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>
