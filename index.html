@@ -234,7 +234,8 @@
     }
 
     function MatchupCard({game, oddsData, onEdit}) {
-      const hPpg = PPG[game.home]||0, aPpg = PPG[game.away]||0;
+      const hPpg = game.home_ppg || PPG[game.home] || 0;
+      const aPpg = game.away_ppg || PPG[game.away] || 0;
       if (!hPpg||!aPpg) return null;
       const avg = (hPpg+aPpg)/2, proj = hPpg+aPpg;
       const hH = generateHistory(game.id*17,hPpg,20), aH = generateHistory(game.id*17+1,aPpg,20);
@@ -309,18 +310,36 @@
 
       useEffect(()=>{
         let cancelled = false;
-        async function load() {
+
+        async function loadGames() {
+          try {
+            const r = await fetch("/api/games");
+            const data = await r.json();
+            if (!cancelled && data.schedule) setSchedule(data.schedule);
+          } catch(e) {
+            console.error("Games fetch failed:", e);
+          }
+        }
+
+        async function loadOdds() {
           try {
             const r = await fetch("/api/odds");
             const data = await r.json();
-            if (!cancelled) { setOddsData(data); setOddsStatus("atualizado "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})); }
+            if (!cancelled) {
+              setOddsData(data);
+              setOddsStatus("atualizado "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}));
+            }
           } catch(e) {
             if (!cancelled) setOddsStatus("erro ao carregar odds");
           }
         }
-        load();
-        const id = setInterval(load, 10*60*1000);
-        return ()=>{ cancelled=true; clearInterval(id); };
+
+        loadGames();
+        loadOdds();
+
+        const gamesId = setInterval(loadGames, 60*60*1000);
+        const oddsId  = setInterval(loadOdds,  10*60*1000);
+        return ()=>{ cancelled=true; clearInterval(gamesId); clearInterval(oddsId); };
       },[]);
 
       const selGames = schedule[selDate]||[];
