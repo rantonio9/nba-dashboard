@@ -1,5 +1,9 @@
 {
   "rewrites": [
-    { "source": "/api/odds", "destination": "/api/odds.js" }
+    { "source": "/api/odds",  "destination": "/api/odds.js"  },
+    { "source": "/api/games", "destination": "/api/games.js" }
+  ],
+  "crons": [
+    { "path": "/api/games", "schedule": "0 * * * *" }
   ]
 }
