@@ -1,4 +1,4 @@
-const BALLDONTLIE_KEY = "9ab2a96e-303d-4fe1-a45a-154db8447384";
+const BALLDONTLIE_KEY = "c900e07c-e941-49d4-8ccd-0884b0fdfa01";
 const BASE = "https://api.balldontlie.io/nba/v1";
 const SEASON = 2025;
 
