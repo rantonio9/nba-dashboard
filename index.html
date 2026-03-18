@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR"> 
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -366,7 +366,7 @@ function App(){
     async function load(){
       setLoading(true);
       try{
-        const r=await fetch("/api/games");
+        const r=await fetch("/api/games?bust="+Date.now());
         const d=await r.json();
         if(!cancelled&&d.schedule){setSchedule(d.schedule);setUpdatedAt(new Date());}
       }catch(e){console.error(e);}
