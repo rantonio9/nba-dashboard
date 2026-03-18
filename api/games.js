@@ -1,31 +1,23 @@
-const BALLDONTLIE_KEY = "c900e07c-e941-49d4-8ccd-0884b0fdfa01";
-const BASE = "https://api.balldontlie.io/nba/v1";
-const SEASON = 2025;
+const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba";
 
-async function bdl(path, params = {}) {
-  const url = new URL(`${BASE}${path}`);
-  Object.entries(params).forEach(([k, v]) =>
-    Array.isArray(v) ? v.forEach(i => url.searchParams.append(k, i)) : url.searchParams.set(k, v)
-  );
-  const r = await fetch(url, { headers: { Authorization: BALLDONTLIE_KEY } });
-  if (!r.ok) throw new Error(`BDL ${r.status}: ${await r.text()}`);
+async function espnFetch(path) {
+  const r = await fetch(`${ESPN_BASE}${path}`);
+  if (!r.ok) throw new Error(`ESPN ${r.status}`);
   return r.json();
 }
 
-function addDays(date, days) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
+function getBrazilDate(utcStr) {
+  const d = new Date(utcStr);
+  const brt = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+  return brt.toISOString().split("T")[0];
 }
 
 function getBrazilToday() {
-  const now = new Date();
-  const brazil = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-  return brazil.toISOString().split("T")[0];
+  return getBrazilDate(new Date().toISOString());
 }
 
 function getWeekDates(today) {
-  const d = new Date(today);
+  const d = new Date(today + "T12:00:00");
   const mon = new Date(d);
   mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return Array.from({ length: 7 }, (_, i) => {
@@ -35,89 +27,112 @@ function getWeekDates(today) {
   });
 }
 
+function parseESPNGame(event, dateStr) {
+  const comp   = event.competitions?.[0];
+  const home   = comp?.competitors?.find(c => c.homeAway === "home");
+  const away   = comp?.competitors?.find(c => c.homeAway === "away");
+  const status = event.status?.type?.name;
+
+  const isFinal = status === "STATUS_FINAL";
+  const isLive  = status === "STATUS_IN_PROGRESS";
+
+  return {
+    id:       event.id,
+    home:     home?.team?.displayName || "",
+    away:     away?.team?.displayName || "",
+    home_ppg: parseFloat(home?.statistics?.find(s => s.name === "avgPoints")?.value) || null,
+    away_ppg: parseFloat(away?.statistics?.find(s => s.name === "avgPoints")?.value) || null,
+    hs:       isFinal || isLive ? parseInt(home?.score) || null : null,
+    vs:       isFinal || isLive ? parseInt(away?.score) || null : null,
+    status:   isFinal ? "Final" : isLive ? event.status?.type?.detail || "Em andamento" : "Agendado",
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "no-store");
 
   try {
-    const today = getBrazilToday();
+    const today     = getBrazilToday();
     const weekDates = getWeekDates(today);
 
-    // Busca 2 dias antes e 8 dias depois para cobrir qualquer diferença de fuso
-    const fetchDates = [];
-    for (let i = -2; i <= 8; i++) fetchDates.push(addDays(today, i));
+    // Busca PPG da temporada (season averages por time)
+    let ppgMap = {};
+    try {
+      const standing = await espnFetch("/teams?limit=30");
+      // PPG vem nos jogos individuais via statistics, não precisa buscar separado
+    } catch (e) {}
 
-    // Busca todos os jogos em paralelo
-    const allGames = [];
-    const errors = [];
-    await Promise.all(
-      fetchDates.map(date =>
-        bdl("/games", { "dates[]": date, per_page: 30, season: SEASON })
-          .then(d => { if (d.data) allGames.push(...d.data); })
-          .catch(e => errors.push(e.message))
-      )
-    );
-
-    // Remove duplicatas
-    const seen = new Set();
-    const games = allGames.filter(g => {
-      if (seen.has(g.id)) return false;
-      seen.add(g.id);
-      return true;
-    });
-
-    // Agrupa por data — usa o campo date da API diretamente (já é ET, muito próximo de BRT)
-    // Para jogos com datetime, converte para BRT
+    // Busca jogos de cada dia da semana
     const scheduleRaw = {};
     weekDates.forEach(d => { scheduleRaw[d] = []; });
 
-    games.forEach(g => {
-      let date = null;
-
-      if (g.datetime) {
-        // Converte UTC para BRT (UTC-3)
-        const brt = new Date(new Date(g.datetime).getTime() - 3 * 60 * 60 * 1000);
-        date = brt.toISOString().split("T")[0];
-      } else if (g.date) {
-        date = g.date.split("T")[0];
-      }
-
-      if (date && scheduleRaw[date] !== undefined) {
-        scheduleRaw[date].push(g);
-      }
-    });
-
-    // Busca PPG de todos os times
-    const teamIds = [...new Set(games.flatMap(g => [g.home_team.id, g.visitor_team.id]))];
-    let ppgMap = {};
-
-    if (teamIds.length > 0) {
+    const errors = [];
+    for (const date of weekDates) {
       try {
-        const avgs = await bdl("/season_averages", { season: SEASON, "team_ids[]": teamIds });
-        avgs.data.forEach(a => { ppgMap[a.team_id] = parseFloat(a.pts) || 0; });
+        const espnDate = date.replace(/-/g, "");
+        const data = await espnFetch(`/scoreboard?dates=${espnDate}&limit=30`);
+        const events = data.events || [];
+        events.forEach(ev => {
+          const game = parseESPNGame(ev, date);
+          if (game.home) scheduleRaw[date].push(game);
+        });
       } catch (e) {
-        console.error("PPG fetch failed:", e.message);
+        errors.push(`${date}: ${e.message}`);
       }
+      await new Promise(r => setTimeout(r, 200));
     }
 
-    // Monta schedule final
-    const schedule = {};
-    weekDates.forEach(date => {
-      schedule[date] = (scheduleRaw[date] || []).map(g => ({
-        id:       g.id,
-        home:     g.home_team.full_name,
-        away:     g.visitor_team.full_name,
-        home_ppg: ppgMap[g.home_team.id] || null,
-        away_ppg: ppgMap[g.visitor_team.id] || null,
-        hs:       g.home_team_score || null,
-        vs:       g.visitor_team_score || null,
-        status:   g.status === "Final" ? "Final"
-                : g.status?.includes("Qtr") || g.status?.includes("Half") ? g.status
-                : "Agendado",
-      }));
+    // Busca PPG separado via scoreboard do dia atual para pegar season stats
+    // ESPN retorna avgPoints nos competitors quando disponível
+    // Para os que ficaram null, buscamos via team stats
+    const allGames = Object.values(scheduleRaw).flat();
+    const teamsNeedingPPG = [...new Set(
+      allGames.filter(g => !g.home_ppg).flatMap(g => [g.home, g.away])
+    )];
+
+    if (teamsNeedingPPG.length > 0) {
+      try {
+        const statsData = await espnFetch(`/teams?limit=30`);
+        const teams = statsData.sports?.[0]?.leagues?.[0]?.teams || [];
+        for (const t of teams) {
+          const name = t.team?.displayName;
+          if (name) ppgMap[name] = null; // placeholder
+        }
+      } catch (e) {}
+
+      // Busca stats da temporada via summary de um jogo recente
+      try {
+        const today_espn = today.replace(/-/g, "");
+        const data = await espnFetch(`/scoreboard?dates=${today_espn}&limit=30`);
+        (data.events || []).forEach(ev => {
+          const comp = ev.competitions?.[0];
+          comp?.competitors?.forEach(c => {
+            const ppgStat = c.statistics?.find(s => s.name === "avgPoints");
+            if (ppgStat && c.team?.displayName) {
+              ppgMap[c.team.displayName] = parseFloat(ppgStat.value) || null;
+            }
+          });
+        });
+      } catch(e) {}
+    }
+
+    // Aplica PPG do mapa nos jogos que ficaram sem
+    Object.values(scheduleRaw).flat().forEach(g => {
+      if (!g.home_ppg && ppgMap[g.home]) g.home_ppg = ppgMap[g.home];
+      if (!g.away_ppg && ppgMap[g.away]) g.away_ppg = ppgMap[g.away];
     });
 
-    res.status(200).json({ schedule, updatedAt: new Date().toISOString(), debug: { today, weekDates, totalGames: games.length, errors } });
+    const schedule = {};
+    weekDates.forEach(date => {
+      schedule[date] = scheduleRaw[date];
+    });
+
+    res.status(200).json({
+      schedule,
+      updatedAt: new Date().toISOString(),
+      debug: { today, weekDates, totalGames: allGames.length, errors }
+    });
 
   } catch (e) {
     res.status(500).json({ error: e.message });
