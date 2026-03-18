@@ -1,7 +1,7 @@
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba";
 
 const cache = {};
-const CACHE_TTL = 60 * 60 * 1000; // 1 hora
+const CACHE_TTL = 60 * 60 * 1000;
 
 async function espnFetch(path) {
   const r = await fetch(`${ESPN_BASE}${path}`);
@@ -9,28 +9,26 @@ async function espnFetch(path) {
   return r.json();
 }
 
-async function getTeamHistory(teamId, n = 20) {
-  const cacheKey = `${teamId}`;
-  if (cache[cacheKey] && Date.now() - cache[cacheKey].ts < CACHE_TTL) {
-    return cache[cacheKey].data;
+async function getTeamScores(teamId, n = 20) {
+  const key = String(teamId);
+  if (cache[key] && Date.now() - cache[key].ts < CACHE_TTL) {
+    return cache[key].data;
   }
 
-  // Busca os últimos N jogos do time
-  const data = await espnFetch(`/teams/${teamId}/schedule?season=2026`);
+  const data   = await espnFetch(`/teams/${teamId}/schedule?season=2026`);
   const events = data.events || [];
 
-  // Filtra apenas jogos já realizados
-  const played = events
+  const scores = events
     .filter(ev => ev.competitions?.[0]?.status?.type?.name === "STATUS_FINAL")
-    .slice(-n);
+    .slice(-n)
+    .map(ev => {
+      const comp = ev.competitions?.[0];
+      const team = comp?.competitors?.find(c => String(c.team?.id) === key);
+      return team ? parseInt(team.score) : null;
+    })
+    .filter(s => s !== null && !isNaN(s));
 
-  const scores = played.map(ev => {
-    const comp = ev.competitions?.[0];
-    const team = comp?.competitors?.find(c => c.team?.id === String(teamId));
-    return parseInt(team?.score) || null;
-  }).filter(s => s !== null);
-
-  cache[cacheKey] = { data: scores, ts: Date.now() };
+  cache[key] = { data: scores, ts: Date.now() };
   return scores;
 }
 
@@ -47,26 +45,26 @@ export default async function handler(req, res) {
 
   try {
     const [homeScores, awayScores] = await Promise.all([
-      getTeamHistory(home_id, 20),
-      getTeamHistory(away_id, 20),
+      getTeamScores(home_id),
+      getTeamScores(away_id),
     ]);
 
-    const calc = (scores, threshold) => ({
-      above: scores.filter(s => s > threshold).length,
-      below: scores.filter(s => s <= threshold).length,
+    const calc = scores => ({
+      above: scores.filter(s => s > avg).length,
+      below: scores.filter(s => s <= avg).length,
       total: scores.length,
       last5: {
-        above: scores.slice(-5).filter(s => s > threshold).length,
-        below: scores.slice(-5).filter(s => s <= threshold).length,
+        above: scores.slice(-5).filter(s => s > avg).length,
+        below: scores.slice(-5).filter(s => s <= avg).length,
         total: Math.min(scores.length, 5),
-      }
+      },
     });
 
     return res.status(200).json({
-      home: calc(homeScores, avg),
-      away: calc(awayScores, avg),
+      home:        calc(homeScores),
+      away:        calc(awayScores),
       matchup_avg: avg,
-      updatedAt: new Date().toISOString(),
+      updatedAt:   new Date().toISOString(),
     });
 
   } catch (e) {
