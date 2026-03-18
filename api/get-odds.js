@@ -8,7 +8,14 @@ async function kvGet(key) {
   if (!r.ok) return null;
   const data = await r.json();
   if (!data.result) return null;
-  try { return JSON.parse(data.result); } catch { return null; }
+  try {
+    // Upstash pode retornar string direta ou objeto {value, ex}
+    const raw = typeof data.result === "string" ? data.result : data.result?.value;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Se ainda for string (double-encoded), parseia de novo
+    return typeof parsed === "string" ? JSON.parse(parsed) : parsed;
+  } catch { return null; }
 }
 
 export default async function handler(req, res) {
