@@ -1,6 +1,9 @@
 {
   "rewrites": [
-    { "source": "/api/odds",  "destination": "/api/odds.js"  },
-    { "source": "/api/games", "destination": "/api/games.js" }
+    { "source": "/api/odds",      "destination": "/api/odds.js"      },
+    { "source": "/api/games",     "destination": "/api/games.js"     },
+    { "source": "/api/history",   "destination": "/api/history.js"   },
+    { "source": "/api/save-odds", "destination": "/api/save-odds.js" },
+    { "source": "/api/get-odds",  "destination": "/api/get-odds.js"  }
   ]
 }
