@@ -18,18 +18,29 @@ async function getTeamScores(teamId, n = 20) {
   const data   = await espnFetch(`/teams/${teamId}/schedule?season=2026`);
   const events = data.events || [];
 
-  const scores = events
-    .filter(ev => ev.competitions?.[0]?.status?.type?.name === "STATUS_FINAL")
-    .slice(-n)
-    .map(ev => {
-      const comp = ev.competitions?.[0];
-      const team = comp?.competitors?.find(c => String(c.team?.id) === key);
-      return team ? parseInt(team.score) : null;
-    })
-    .filter(s => s !== null && !isNaN(s));
+  const scores = [];
 
-  cache[key] = { data: scores, ts: Date.now() };
-  return scores;
+  for (const ev of events) {
+    const comp = ev.competitions?.[0];
+    if (!comp) continue;
+
+    // Só jogos finalizados
+    const status = comp.status?.type?.name || comp.status?.type?.id;
+    const isFinal = status === "STATUS_FINAL" || status === "3";
+    if (!isFinal) continue;
+
+    // Acha o competitor que é o nosso time
+    const competitor = comp.competitors?.find(c => String(c.id) === key || String(c.team?.id) === key);
+    if (!competitor) continue;
+
+    // O score pode estar em diferentes campos dependendo da versão da API
+    const score = parseInt(competitor.score ?? competitor.homeScore ?? competitor.awayScore);
+    if (!isNaN(score) && score > 0) scores.push(score);
+  }
+
+  const result = scores.slice(-n);
+  cache[key] = { data: result, ts: Date.now() };
+  return result;
 }
 
 export default async function handler(req, res) {
@@ -53,6 +64,7 @@ export default async function handler(req, res) {
       above: scores.filter(s => s > avg).length,
       below: scores.filter(s => s <= avg).length,
       total: scores.length,
+      scores, // debug temporário
       last5: {
         above: scores.slice(-5).filter(s => s > avg).length,
         below: scores.slice(-5).filter(s => s <= avg).length,
