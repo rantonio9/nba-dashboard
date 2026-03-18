@@ -1,7 +1,7 @@
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba";
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutos
 
 let cache = { data: null, ts: 0 };
+const CACHE_TTL = 30 * 60 * 1000;
 
 async function espnFetch(path) {
   const r = await fetch(`${ESPN_BASE}${path}`);
@@ -10,8 +10,7 @@ async function espnFetch(path) {
 }
 
 function getBrazilToday() {
-  const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
-  return brt.toISOString().split("T")[0];
+  return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().split("T")[0];
 }
 
 function getWeekDates(today) {
@@ -26,36 +25,49 @@ function getWeekDates(today) {
 }
 
 function parseGame(ev) {
-  const comp   = ev.competitions?.[0];
-  const home   = comp?.competitors?.find(c => c.homeAway === "home");
-  const away   = comp?.competitors?.find(c => c.homeAway === "away");
-  const status = ev.status?.type?.name;
-  const isFinal = status === "STATUS_FINAL";
-  const isLive  = status === "STATUS_IN_PROGRESS";
+  const comp  = ev.competitions?.[0];
+  const home  = comp?.competitors?.find(c => c.homeAway === "home");
+  const away  = comp?.competitors?.find(c => c.homeAway === "away");
+  const stype = ev.status?.type?.name;
 
-  const getPPG = (c) => {
+  const isFinal = stype === "STATUS_FINAL";
+  const isLive  = stype === "STATUS_IN_PROGRESS";
+
+  const getPPG = c => {
     const s = c?.statistics?.find(s => s.name === "avgPoints");
-    return s ? parseFloat(s.value) : null;
+    return s ? parseFloat(s.displayValue) : null;
   };
 
+  // Odds já vêm da ESPN — campo overUnder do DraftKings
+  const oddsObj   = comp?.odds?.[0];
+  const overUnder = oddsObj?.overUnder || null;
+  const spread    = oddsObj?.details || null;
+
   return {
-    id:       ev.id,
-    home:     home?.team?.displayName || "",
-    away:     away?.team?.displayName || "",
-    home_id:  home?.team?.id || null,
-    away_id:  away?.team?.id || null,
-    home_ppg: getPPG(home),
-    away_ppg: getPPG(away),
-    hs:       isFinal || isLive ? parseInt(home?.score) || null : null,
-    vs:       isFinal || isLive ? parseInt(away?.score) || null : null,
-    status:   isFinal ? "Final" : isLive ? ev.status?.type?.detail || "Em andamento" : "Agendado",
+    id:          ev.id,
+    home:        home?.team?.displayName || "",
+    away:        away?.team?.displayName || "",
+    home_id:     home?.team?.id || null,
+    away_id:     away?.team?.id || null,
+    home_abbr:   home?.team?.abbreviation || "",
+    away_abbr:   away?.team?.abbreviation || "",
+    home_ppg:    getPPG(home),
+    away_ppg:    getPPG(away),
+    home_record: home?.records?.find(r => r.type === "total")?.summary || null,
+    away_record: away?.records?.find(r => r.type === "total")?.summary || null,
+    hs:          isFinal || isLive ? parseInt(home?.score) || null : null,
+    vs:          isFinal || isLive ? parseInt(away?.score) || null : null,
+    status:      isFinal ? "Final"
+               : isLive  ? ev.status?.type?.detail || "Em andamento"
+               : "Agendado",
+    over_under:  overUnder,
+    spread:      spread,
   };
 }
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
 
-  // Serve cache se ainda válido
   if (cache.data && Date.now() - cache.ts < CACHE_TTL) {
     res.setHeader("X-Cache", "HIT");
     return res.status(200).json(cache.data);
@@ -64,14 +76,12 @@ export default async function handler(req, res) {
   try {
     const today     = getBrazilToday();
     const weekDates = getWeekDates(today);
+    const start     = weekDates[0].replace(/-/g, "");
+    const end       = weekDates[6].replace(/-/g, "");
 
-    // Melhoria 2: uma única chamada para a semana inteira
-    const startDate = weekDates[0].replace(/-/g, "");
-    const endDate   = weekDates[6].replace(/-/g, "");
-    const data      = await espnFetch(`/scoreboard?dates=${startDate}-${endDate}&limit=100`);
-    const events    = data.events || [];
+    const data   = await espnFetch(`/scoreboard?dates=${start}-${end}&limit=100`);
+    const events = data.events || [];
 
-    // Agrupa jogos por data BRT
     const scheduleRaw = {};
     weekDates.forEach(d => { scheduleRaw[d] = []; });
 
@@ -88,15 +98,13 @@ export default async function handler(req, res) {
     weekDates.forEach(d => { schedule[d] = scheduleRaw[d]; });
 
     const result = { schedule, updatedAt: new Date().toISOString() };
-
-    // Atualiza cache
     cache = { data: result, ts: Date.now() };
+
     res.setHeader("X-Cache", "MISS");
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).json(result);
 
   } catch (e) {
-    // Se falhar mas tiver cache antigo, serve ele
     if (cache.data) {
       res.setHeader("X-Cache", "STALE");
       return res.status(200).json(cache.data);
