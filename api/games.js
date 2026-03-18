@@ -37,7 +37,7 @@ function getWeekDates(today) {
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
+  res.setHeader("Cache-Control", "no-store");
 
   try {
     const today = getBrazilToday();
@@ -49,11 +49,12 @@ export default async function handler(req, res) {
 
     // Busca todos os jogos em paralelo
     const allGames = [];
+    const errors = [];
     await Promise.all(
       fetchDates.map(date =>
         bdl("/games", { "dates[]": date, per_page: 30, season: SEASON })
           .then(d => { if (d.data) allGames.push(...d.data); })
-          .catch(() => {})
+          .catch(e => errors.push(e.message))
       )
     );
 
@@ -116,7 +117,7 @@ export default async function handler(req, res) {
       }));
     });
 
-    res.status(200).json({ schedule, updatedAt: new Date().toISOString(), debug: { today, weekDates, totalGames: games.length } });
+    res.status(200).json({ schedule, updatedAt: new Date().toISOString(), debug: { today, weekDates, totalGames: games.length, errors } });
 
   } catch (e) {
     res.status(500).json({ error: e.message });
