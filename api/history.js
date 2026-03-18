@@ -17,45 +17,28 @@ async function getTeamScores(teamId, n = 20) {
 
   const data   = await espnFetch(`/teams/${teamId}/schedule?season=2026`);
   const events = data.events || [];
-  const debugSample = [];
-
   const scores = [];
 
   for (const ev of events) {
     const comp = ev.competitions?.[0];
     if (!comp) continue;
 
-    // Captura amostra dos primeiros 3 jogos para debug
-    if (debugSample.length < 3) {
-      debugSample.push({
-        name: ev.name,
-        compStatus: comp.status,
-        competitors: comp.competitors?.map(c => ({
-          id: c.id,
-          teamId: c.team?.id,
-          score: c.score,
-          winner: c.winner,
-        }))
-      });
-    }
+    const completed = comp.status?.type?.completed === true;
+    if (!completed) continue;
 
-    // Só jogos finalizados
-    const status = comp.status?.type?.name || comp.status?.type?.id;
-    const isFinal = status === "STATUS_FINAL" || status === "3";
-    if (!isFinal) continue;
-
-    // Acha o competitor que é o nosso time
-    const competitor = comp.competitors?.find(c => String(c.id) === key || String(c.team?.id) === key);
+    const competitor = comp.competitors?.find(
+      c => String(c.id) === key || String(c.team?.id) === key
+    );
     if (!competitor) continue;
 
-    // O score pode estar em diferentes campos dependendo da versão da API
-    const score = parseInt(competitor.score ?? competitor.homeScore ?? competitor.awayScore);
-    if (!isNaN(score) && score > 0) scores.push(score);
+    // score é um objeto {value, displayValue}
+    const score = competitor.score?.value ?? parseInt(competitor.score);
+    if (score > 0 && !isNaN(score)) scores.push(score);
   }
 
   const result = scores.slice(-n);
   cache[key] = { data: result, ts: Date.now() };
-  return { scores: result, debug: debugSample };
+  return result;
 }
 
 export default async function handler(req, res) {
@@ -70,16 +53,15 @@ export default async function handler(req, res) {
   const avg = parseFloat(matchup_avg);
 
   try {
-    const [homeResult, awayResult] = await Promise.all([
+    const [homeScores, awayScores] = await Promise.all([
       getTeamScores(home_id),
       getTeamScores(away_id),
     ]);
 
-    const calc = ({ scores }) => ({
+    const calc = scores => ({
       above: scores.filter(s => s > avg).length,
       below: scores.filter(s => s <= avg).length,
       total: scores.length,
-      scores,
       last5: {
         above: scores.slice(-5).filter(s => s > avg).length,
         below: scores.slice(-5).filter(s => s <= avg).length,
@@ -88,10 +70,9 @@ export default async function handler(req, res) {
     });
 
     return res.status(200).json({
-      home:        calc(homeResult),
-      away:        calc(awayResult),
+      home:        calc(homeScores),
+      away:        calc(awayScores),
       matchup_avg: avg,
-      debug:       { home: homeResult.debug, away: awayResult.debug },
       updatedAt:   new Date().toISOString(),
     });
 
