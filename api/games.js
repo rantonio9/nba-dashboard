@@ -1,4 +1,7 @@
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba";
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutos
+
+let cache = { data: null, ts: 0 };
 
 async function espnFetch(path) {
   const r = await fetch(`${ESPN_BASE}${path}`);
@@ -6,14 +9,9 @@ async function espnFetch(path) {
   return r.json();
 }
 
-function getBrazilDate(utcStr) {
-  const d = new Date(utcStr);
-  const brt = new Date(d.getTime() - 3 * 60 * 60 * 1000);
-  return brt.toISOString().split("T")[0];
-}
-
 function getBrazilToday() {
-  return getBrazilDate(new Date().toISOString());
+  const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  return brt.toISOString().split("T")[0];
 }
 
 function getWeekDates(today) {
@@ -27,114 +25,82 @@ function getWeekDates(today) {
   });
 }
 
-function parseESPNGame(event, dateStr) {
-  const comp   = event.competitions?.[0];
+function parseGame(ev) {
+  const comp   = ev.competitions?.[0];
   const home   = comp?.competitors?.find(c => c.homeAway === "home");
   const away   = comp?.competitors?.find(c => c.homeAway === "away");
-  const status = event.status?.type?.name;
-
+  const status = ev.status?.type?.name;
   const isFinal = status === "STATUS_FINAL";
   const isLive  = status === "STATUS_IN_PROGRESS";
 
+  const getPPG = (c) => {
+    const s = c?.statistics?.find(s => s.name === "avgPoints");
+    return s ? parseFloat(s.value) : null;
+  };
+
   return {
-    id:       event.id,
+    id:       ev.id,
     home:     home?.team?.displayName || "",
     away:     away?.team?.displayName || "",
-    home_ppg: parseFloat(home?.statistics?.find(s => s.name === "avgPoints")?.value) || null,
-    away_ppg: parseFloat(away?.statistics?.find(s => s.name === "avgPoints")?.value) || null,
+    home_id:  home?.team?.id || null,
+    away_id:  away?.team?.id || null,
+    home_ppg: getPPG(home),
+    away_ppg: getPPG(away),
     hs:       isFinal || isLive ? parseInt(home?.score) || null : null,
     vs:       isFinal || isLive ? parseInt(away?.score) || null : null,
-    status:   isFinal ? "Final" : isLive ? event.status?.type?.detail || "Em andamento" : "Agendado",
+    status:   isFinal ? "Final" : isLive ? ev.status?.type?.detail || "Em andamento" : "Agendado",
   };
 }
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Cache-Control", "no-store");
+
+  // Serve cache se ainda válido
+  if (cache.data && Date.now() - cache.ts < CACHE_TTL) {
+    res.setHeader("X-Cache", "HIT");
+    return res.status(200).json(cache.data);
+  }
 
   try {
     const today     = getBrazilToday();
     const weekDates = getWeekDates(today);
 
-    // Busca PPG da temporada (season averages por time)
-    let ppgMap = {};
-    try {
-      const standing = await espnFetch("/teams?limit=30");
-      // PPG vem nos jogos individuais via statistics, não precisa buscar separado
-    } catch (e) {}
+    // Melhoria 2: uma única chamada para a semana inteira
+    const startDate = weekDates[0].replace(/-/g, "");
+    const endDate   = weekDates[6].replace(/-/g, "");
+    const data      = await espnFetch(`/scoreboard?dates=${startDate}-${endDate}&limit=100`);
+    const events    = data.events || [];
 
-    // Busca jogos de cada dia da semana
+    // Agrupa jogos por data BRT
     const scheduleRaw = {};
     weekDates.forEach(d => { scheduleRaw[d] = []; });
 
-    const errors = [];
-    for (const date of weekDates) {
-      try {
-        const espnDate = date.replace(/-/g, "");
-        const data = await espnFetch(`/scoreboard?dates=${espnDate}&limit=30`);
-        const events = data.events || [];
-        events.forEach(ev => {
-          const game = parseESPNGame(ev, date);
-          if (game.home) scheduleRaw[date].push(game);
-        });
-      } catch (e) {
-        errors.push(`${date}: ${e.message}`);
+    events.forEach(ev => {
+      const brt  = new Date(new Date(ev.date).getTime() - 3 * 60 * 60 * 1000);
+      const date = brt.toISOString().split("T")[0];
+      if (scheduleRaw[date] !== undefined) {
+        const game = parseGame(ev);
+        if (game.home) scheduleRaw[date].push(game);
       }
-      await new Promise(r => setTimeout(r, 200));
-    }
-
-    // Busca PPG separado via scoreboard do dia atual para pegar season stats
-    // ESPN retorna avgPoints nos competitors quando disponível
-    // Para os que ficaram null, buscamos via team stats
-    const allGames = Object.values(scheduleRaw).flat();
-    const teamsNeedingPPG = [...new Set(
-      allGames.filter(g => !g.home_ppg).flatMap(g => [g.home, g.away])
-    )];
-
-    if (teamsNeedingPPG.length > 0) {
-      try {
-        const statsData = await espnFetch(`/teams?limit=30`);
-        const teams = statsData.sports?.[0]?.leagues?.[0]?.teams || [];
-        for (const t of teams) {
-          const name = t.team?.displayName;
-          if (name) ppgMap[name] = null; // placeholder
-        }
-      } catch (e) {}
-
-      // Busca stats da temporada via summary de um jogo recente
-      try {
-        const today_espn = today.replace(/-/g, "");
-        const data = await espnFetch(`/scoreboard?dates=${today_espn}&limit=30`);
-        (data.events || []).forEach(ev => {
-          const comp = ev.competitions?.[0];
-          comp?.competitors?.forEach(c => {
-            const ppgStat = c.statistics?.find(s => s.name === "avgPoints");
-            if (ppgStat && c.team?.displayName) {
-              ppgMap[c.team.displayName] = parseFloat(ppgStat.value) || null;
-            }
-          });
-        });
-      } catch(e) {}
-    }
-
-    // Aplica PPG do mapa nos jogos que ficaram sem
-    Object.values(scheduleRaw).flat().forEach(g => {
-      if (!g.home_ppg && ppgMap[g.home]) g.home_ppg = ppgMap[g.home];
-      if (!g.away_ppg && ppgMap[g.away]) g.away_ppg = ppgMap[g.away];
     });
 
     const schedule = {};
-    weekDates.forEach(date => {
-      schedule[date] = scheduleRaw[date];
-    });
+    weekDates.forEach(d => { schedule[d] = scheduleRaw[d]; });
 
-    res.status(200).json({
-      schedule,
-      updatedAt: new Date().toISOString(),
-      debug: { today, weekDates, totalGames: allGames.length, errors }
-    });
+    const result = { schedule, updatedAt: new Date().toISOString() };
+
+    // Atualiza cache
+    cache = { data: result, ts: Date.now() };
+    res.setHeader("X-Cache", "MISS");
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json(result);
 
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    // Se falhar mas tiver cache antigo, serve ele
+    if (cache.data) {
+      res.setHeader("X-Cache", "STALE");
+      return res.status(200).json(cache.data);
+    }
+    return res.status(500).json({ error: e.message });
   }
 }
