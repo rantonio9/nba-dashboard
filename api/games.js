@@ -12,10 +12,20 @@ async function bdl(path, params = {}) {
   return r.json();
 }
 
+// Converte uma data UTC para a data local no fuso de Brasília (UTC-3)
+function toBrazilDate(utcDateStr) {
+  const d = new Date(utcDateStr);
+  // Brasília é UTC-3
+  const brazil = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+  return brazil.toISOString().split("T")[0];
+}
+
+// Retorna os 7 dias da semana atual no fuso de Brasília
 function getWeekDates() {
-  const today = new Date();
-  const mon = new Date(today);
-  mon.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const nowUTC = new Date();
+  const nowBrazil = new Date(nowUTC.getTime() - 3 * 60 * 60 * 1000);
+  const mon = new Date(nowBrazil);
+  mon.setDate(nowBrazil.getDate() - ((nowBrazil.getDay() + 6) % 7));
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(mon);
     d.setDate(mon.getDate() + i);
@@ -23,28 +33,70 @@ function getWeekDates() {
   });
 }
 
+// Retorna datas para buscar na API (inclui dia anterior e posterior para cobrir diferença de fuso)
+function getAPIFetchDates(weekDates) {
+  const first = new Date(weekDates[0]);
+  const last  = new Date(weekDates[6]);
+  first.setDate(first.getDate() - 1);
+  last.setDate(last.getDate() + 1);
+
+  const dates = [];
+  const cur = new Date(first);
+  while (cur <= last) {
+    dates.push(cur.toISOString().split("T")[0]);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
 
   try {
-    const dates = getWeekDates();
+    const weekDates   = getWeekDates();
+    const fetchDates  = getAPIFetchDates(weekDates);
 
-    // Fetch games for all 7 days in parallel
-    const results = await Promise.all(
-      dates.map(date =>
+    // Busca jogos para todas as datas necessárias em paralelo
+    const allGames = [];
+    await Promise.all(
+      fetchDates.map(date =>
         bdl("/games", { "dates[]": date, per_page: 30, season: SEASON })
-          .then(d => ({ date, games: d.data || [] }))
-          .catch(() => ({ date, games: [] }))
+          .then(d => { if (d.data) allGames.push(...d.data); })
+          .catch(() => {})
       )
     );
 
-    // Get all unique team IDs from this week's games
+    // Remover duplicatas por ID
+    const seen = new Set();
+    const uniqueGames = allGames.filter(g => {
+      if (seen.has(g.id)) return false;
+      seen.add(g.id);
+      return true;
+    });
+
+    // Agrupa os jogos pela data no fuso do Brasil
+    // A balldontlie retorna o campo "date" como "YYYY-MM-DD" no horário local do jogo (ET)
+    // Mas para garantir, usamos o campo datetime se disponível, senão usamos date
+    const scheduleRaw = {};
+    weekDates.forEach(d => { scheduleRaw[d] = []; });
+
+    uniqueGames.forEach(g => {
+      // Usa datetime (UTC) se disponível, senão usa o campo date diretamente
+      const brazilDate = g.datetime
+        ? toBrazilDate(g.datetime)
+        : g.date?.split("T")[0] || null;
+
+      if (brazilDate && scheduleRaw[brazilDate] !== undefined) {
+        scheduleRaw[brazilDate].push(g);
+      }
+    });
+
+    // Busca PPG de todos os times envolvidos
     const teamIds = [...new Set(
-      results.flatMap(r => r.games.flatMap(g => [g.home_team.id, g.visitor_team.id]))
+      Object.values(scheduleRaw).flat().flatMap(g => [g.home_team.id, g.visitor_team.id])
     )];
 
-    // Fetch season averages for all teams
     let ppgMap = {};
     if (teamIds.length > 0) {
       try {
@@ -58,20 +110,20 @@ export default async function handler(req, res) {
       }
     }
 
-    // Build schedule map
+    // Monta o schedule final
     const schedule = {};
-    results.forEach(({ date, games }) => {
-      schedule[date] = games.map((g, i) => ({
-        id: g.id,
-        home: g.home_team.full_name,
-        away: g.visitor_team.full_name,
+    weekDates.forEach(date => {
+      schedule[date] = (scheduleRaw[date] || []).map(g => ({
+        id:       g.id,
+        home:     g.home_team.full_name,
+        away:     g.visitor_team.full_name,
         home_ppg: ppgMap[g.home_team.id] || null,
         away_ppg: ppgMap[g.visitor_team.id] || null,
-        hs: g.home_team_score || null,
-        vs: g.visitor_team_score || null,
-        status: g.status === "Final" ? "Final"
-          : g.status?.includes("Qtr") || g.status?.includes("Half") ? g.status
-          : "Agendado",
+        hs:       g.home_team_score  || null,
+        vs:       g.visitor_team_score || null,
+        status:   g.status === "Final" ? "Final"
+                : g.status?.includes("Qtr") || g.status?.includes("Half") ? g.status
+                : "Agendado",
       }));
     });
 
