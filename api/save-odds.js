@@ -2,10 +2,9 @@ const KV_URL   = process.env.KV_REST_API_URL;
 const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
 async function kvSet(key, value, exSeconds = 60 * 60 * 24 * 14) {
-  const r = await fetch(`${KV_URL}/set/${encodeURIComponent(key)}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${KV_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ value: JSON.stringify(value), ex: exSeconds }),
+  const r = await fetch(`${KV_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(JSON.stringify(value))}?ex=${exSeconds}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${KV_TOKEN}` },
   });
   if (!r.ok) throw new Error(`KV set failed: ${r.status}`);
   return r.json();
