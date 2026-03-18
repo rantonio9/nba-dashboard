@@ -82,12 +82,22 @@ export default async function handler(req, res) {
     weekDates.forEach(d => { scheduleRaw[d] = []; });
 
     uniqueGames.forEach(g => {
-      // Usa datetime (UTC) se disponível, senão usa o campo date diretamente
-      const brazilDate = g.datetime
-        ? toBrazilDate(g.datetime)
-        : g.date?.split("T")[0] || null;
+      // Tenta todas as formas possíveis de obter a data no fuso do Brasil
+      const candidates = [];
 
-      if (brazilDate && scheduleRaw[brazilDate] !== undefined) {
+      // 1. datetime em UTC (mais preciso)
+      if (g.datetime) candidates.push(toBrazilDate(g.datetime));
+
+      // 2. date como string ISO com hora
+      if (g.date && g.date.includes("T")) candidates.push(toBrazilDate(g.date));
+
+      // 3. date como string simples YYYY-MM-DD (já é ET, próximo ao Brasil)
+      if (g.date && !g.date.includes("T")) candidates.push(g.date.split("T")[0]);
+
+      // Usa o primeiro candidato que cai numa data da semana
+      const brazilDate = candidates.find(d => scheduleRaw[d] !== undefined) || null;
+
+      if (brazilDate) {
         scheduleRaw[brazilDate].push(g);
       }
     });
