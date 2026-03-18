@@ -41,6 +41,35 @@ const PPG_FB={
 function getBrazilToday(){
   return new Date(Date.now()-3*60*60*1000).toISOString().split("T")[0];
 }
+
+// ── Upstash odds cache ──────────────────────────────────────────
+async function saveOddsToKV(games) {
+  const toSave = games
+    .filter(g => g.status !== "Final" && g.over_under)
+    .map(g => ({
+      id:         g.id,
+      over_under: g.over_under,
+      spread:     g.spread || null,
+      proj:       (g.home_ppg || PPG_FB[g.home] || 0) + (g.away_ppg || PPG_FB[g.away] || 0),
+    }));
+  if (!toSave.length) return;
+  try {
+    await fetch("/api/save-odds", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ games: toSave }),
+    });
+  } catch (e) { console.error("save-odds failed:", e); }
+}
+
+async function loadOddsFromKV(gameIds) {
+  if (!gameIds.length) return {};
+  try {
+    const r = await fetch(`/api/get-odds?ids=${gameIds.join(",")}`);
+    const d = await r.json();
+    return d.odds || {};
+  } catch { return {}; }
+}
 function getWeekDates(){
   const brt=new Date(Date.now()-3*60*60*1000);
   const mon=new Date(brt);
@@ -60,27 +89,31 @@ function calcResult(proj, overUnder, realTotal) {
   return projSaysOver === realWasOver ? "hit" : "miss";
 }
 
-function getGameStats(game) {
+function getGameStats(game, savedOddsMap) {
   const hPpg = game.home_ppg || PPG_FB[game.home] || 0;
   const aPpg = game.away_ppg || PPG_FB[game.away] || 0;
   const avg  = parseFloat(((hPpg + aPpg) / 2).toFixed(1));
   const proj = hPpg + aPpg;
   const realTotal = (game.hs != null && game.vs != null) ? game.hs + game.vs : null;
-  const result = game.status === "Final" ? calcResult(proj, game.over_under, realTotal) : null;
-  return { hPpg, aPpg, avg, proj, realTotal, result };
+  const saved      = savedOddsMap?.[String(game.id)];
+  const overUnder  = game.over_under || saved?.over_under || null;
+  const spread     = game.spread     || saved?.spread     || null;
+  const projForCalc = saved?.proj || proj;
+  const result = game.status === "Final" ? calcResult(projForCalc, overUnder, realTotal) : null;
+  return { hPpg, aPpg, avg, proj, realTotal, result, overUnder, spread };
 }
 
 // Relatório de acertos do dia e da semana
-function AccuracyReport({ schedule, weekDates, selDate }) {
+function AccuracyReport({ schedule, weekDates, selDate, savedOddsMap }) {
   const dayGames   = (schedule[selDate] || []).filter(g => g.status === "Final");
   const weekGames  = weekDates.flatMap(d => (schedule[d] || []).filter(g => g.status === "Final"));
 
   const countHits = games => {
-    const withOdds = games.filter(g => g.over_under);
-    const hits = withOdds.filter(g => {
-      const { proj, result } = getGameStats(g);
-      return result === "hit";
+    const withOdds = games.filter(g => {
+      const { overUnder } = getGameStats(g, savedOddsMap);
+      return !!overUnder;
     });
+    const hits = withOdds.filter(g => getGameStats(g, savedOddsMap).result === "hit");
     return { hits: hits.length, total: withOdds.length };
   };
 
@@ -249,8 +282,8 @@ function EditModal({game,onSave,onClose}){
   );
 }
 
-function MatchupCard({game,onEdit}){
-  const { hPpg, aPpg, avg, proj, realTotal, result } = getGameStats(game);
+function MatchupCard({game, savedOddsMap, onEdit}){
+  const { hPpg, aPpg, avg, proj, realTotal, result, overUnder, spread } = getGameStats(game, savedOddsMap);
   if(!hPpg||!aPpg) return null;
 
   const isFinal = game.status==="Final";
@@ -337,8 +370,8 @@ function MatchupCard({game,onEdit}){
         {/* Odds — aparece sempre (antes e depois do jogo) */}
         <OddsPanel
           proj={proj}
-          overUnder={game.over_under}
-          spread={game.spread}
+          overUnder={overUnder}
+          spread={spread}
           result={result}
           realTotal={realTotal}
         />
@@ -357,6 +390,7 @@ function App(){
   const todayStr=getBrazilToday();
   const [selDate,setSelDate]=useState(todayStr);
   const [schedule,setSchedule]=useState({});
+  const [savedOddsMap,setSavedOddsMap]=useState({});
   const [editing,setEditing]=useState(null);
   const [loading,setLoading]=useState(true);
   const [updatedAt,setUpdatedAt]=useState(null);
@@ -368,7 +402,23 @@ function App(){
       try{
         const r=await fetch("/api/games?bust="+Date.now());
         const d=await r.json();
-        if(!cancelled&&d.schedule){setSchedule(d.schedule);setUpdatedAt(new Date());}
+        if(!cancelled&&d.schedule){
+          setSchedule(d.schedule);
+          setUpdatedAt(new Date());
+
+          // Salva odds dos jogos agendados no Upstash
+          const allGames = Object.values(d.schedule).flat();
+          await saveOddsToKV(allGames);
+
+          // Carrega odds salvas para jogos finalizados sem odds atuais
+          const finalIds = allGames
+            .filter(g => g.status === "Final" && !g.over_under)
+            .map(g => String(g.id));
+          if (finalIds.length) {
+            const oddsMap = await loadOddsFromKV(finalIds);
+            if (!cancelled) setSavedOddsMap(prev => ({...prev, ...oddsMap}));
+          }
+        }
       }catch(e){console.error(e);}
       finally{if(!cancelled)setLoading(false);}
     }
@@ -421,10 +471,13 @@ function App(){
 
               // Acertos do dia no botão
               const dayHits = games.filter(g => {
-                if(g.status!=="Final"||!g.over_under) return false;
-                return getGameStats(g).result==="hit";
+                if(g.status!=="Final") return false;
+                return getGameStats(g, savedOddsMap).result==="hit";
               }).length;
-              const dayWithOdds = games.filter(g=>g.status==="Final"&&g.over_under).length;
+              const dayWithOdds = games.filter(g => {
+                if(g.status!=="Final") return false;
+                return !!getGameStats(g, savedOddsMap).overUnder;
+              }).length;
 
               return(
                 <button key={d} onClick={()=>setSelDate(d)} style={{
@@ -471,11 +524,11 @@ function App(){
         </div>
 
         {/* Relatório de acertos */}
-        <AccuracyReport schedule={schedule} weekDates={weekDates} selDate={selDate}/>
+        <AccuracyReport schedule={schedule} weekDates={weekDates} selDate={selDate} savedOddsMap={savedOddsMap}/>
 
         {loading&&<div style={{textAlign:"center",padding:"3rem 0",color:TEXT3,fontSize:13}}>Carregando jogos...</div>}
         {!loading&&selGames.length===0&&<div style={{textAlign:"center",padding:"3rem 0",color:TEXT3,fontSize:13}}>Nenhum jogo para este dia.</div>}
-        {selGames.map(g=><MatchupCard key={g.id} game={g} onEdit={setEditing}/>)}
+        {selGames.map(g=><MatchupCard key={g.id} game={g} savedOddsMap={savedOddsMap} onEdit={setEditing}/>)}
 
         <div style={{fontSize:9,color:TEXT3,marginTop:"1rem",textAlign:"center",letterSpacing:"0.05em"}}>
           Jogos, PPG, odds e histórico: ESPN API · Atualização automática a cada 30 min
