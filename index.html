@@ -94,13 +94,18 @@ function getGameStats(game, savedOddsMap) {
   const aPpg = game.away_ppg || PPG_FB[game.away] || 0;
   const avg  = parseFloat(((hPpg + aPpg) / 2).toFixed(1));
   const proj = hPpg + aPpg;
-  const realTotal = (game.hs != null && game.vs != null) ? game.hs + game.vs : null;
+  const realTotal  = (game.hs != null && game.vs != null) ? game.hs + game.vs : null;
   const saved      = savedOddsMap?.[String(game.id)];
   const overUnder  = game.over_under || saved?.over_under || null;
   const spread     = game.spread     || saved?.spread     || null;
-  const projForCalc = saved?.proj || proj;
-  const result = game.status === "Final" ? calcResult(projForCalc, overUnder, realTotal) : null;
-  return { hPpg, aPpg, avg, proj, realTotal, result, overUnder, spread };
+
+  // Para jogos finalizados, usa a projeção salva antes do jogo (PPG não alterado)
+  // Para jogos futuros/ao vivo, usa a projeção atual
+  const projDisplay = (game.status === "Final" && saved?.proj) ? saved.proj : proj;
+  const avgDisplay  = (game.status === "Final" && saved?.proj) ? parseFloat((saved.proj / 2).toFixed(1)) : avg;
+
+  const result = game.status === "Final" ? calcResult(saved?.proj || proj, overUnder, realTotal) : null;
+  return { hPpg, aPpg, avg: avgDisplay, proj: projDisplay, realTotal, result, overUnder, spread };
 }
 
 // Relatório de acertos do dia e da semana
