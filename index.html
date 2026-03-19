@@ -164,7 +164,203 @@ function AccuracyReport({ schedule, weekDates, selDate, savedOddsMap }) {
   );
 }
 
-function ScoreBar({above,total}){
+// ── Kelly calculator ─────────────────────────────────────────────
+function americanToDecimal(american) {
+  if (!american) return null;
+  const n = parseFloat(american);
+  if (isNaN(n)) return null;
+  return n > 0 ? (n / 100) + 1 : (100 / Math.abs(n)) + 1;
+}
+
+function kellyFraction(p, decimalOdds) {
+  const b = decimalOdds - 1;
+  const q = 1 - p;
+  return (b * p - q) / b;
+}
+
+// Estima probabilidade de acerto baseada no histórico + divergência
+function estimateProb(histAccuracy, divergence) {
+  // Base: acurácia histórica do modelo (entre 0.4 e 0.75)
+  const base = Math.min(0.75, Math.max(0.4, histAccuracy));
+  // Ajuste pela divergência: cada 5 pts extras adicionam 2% de confiança, max +10%
+  const divBonus = Math.min(0.10, (Math.abs(divergence) / 5) * 0.02);
+  return Math.min(0.75, base + divBonus);
+}
+
+function BettingSimulator({ schedule, weekDates, savedOddsMap, selDate }) {
+  const [banca, setBanca] = useState(1000);
+  const [minDiv, setMinDiv] = useState(5);
+  const [kellyFrac, setKellyFrac] = useState(0.5);
+  const [maxPct, setMaxPct] = useState(5);
+
+  // Calcula acurácia histórica da semana
+  const weekGames = weekDates.flatMap(d => (schedule[d] || []).filter(g => g.status === "Final"));
+  const withOdds  = weekGames.filter(g => {
+    const { overUnder } = getGameStats(g, savedOddsMap);
+    return !!overUnder;
+  });
+  const hits = withOdds.filter(g => getGameStats(g, savedOddsMap).result === "hit");
+  const histAccuracy = withOdds.length > 0 ? hits.length / withOdds.length : 0.55;
+
+  // Jogos do dia selecionado que ainda não finalizaram e têm odds
+  const todayGames = (schedule[selDate] || []).filter(g => {
+    if (g.status === "Final") return false;
+    const { overUnder } = getGameStats(g, savedOddsMap);
+    return !!overUnder;
+  });
+
+  // Calcula alocação para cada jogo
+  const allocations = todayGames.map(g => {
+    const { proj, overUnder } = getGameStats(g, savedOddsMap);
+    const divergence = proj - overUnder;
+    const absDivergence = Math.abs(divergence);
+
+    if (absDivergence < minDiv) return { game: g, reason: "divergência insuficiente", alloc: 0 };
+
+    const p    = estimateProb(histAccuracy, divergence);
+    const odds = 1.91; // -110 padrão para O/U
+    const kf   = kellyFraction(p, odds);
+
+    if (kf <= 0) return { game: g, reason: "edge negativo", alloc: 0 };
+
+    const rawPct  = kf * kellyFrac * 100;
+    const cappedPct = Math.min(maxPct, rawPct);
+    const alloc   = parseFloat(((cappedPct / 100) * banca).toFixed(2));
+    const side    = divergence > 0 ? "OVER" : "UNDER";
+    const retorno = parseFloat((alloc * (odds - 1)).toFixed(2));
+
+    return { game: g, divergence, absDivergence, p, kf, rawPct, cappedPct, alloc, side, retorno, reason: null };
+  }).filter(a => a !== null);
+
+  const eligible  = allocations.filter(a => a.alloc > 0);
+  const excluded  = allocations.filter(a => a.alloc === 0);
+  const totalAlloc = eligible.reduce((s, a) => s + a.alloc, 0);
+  const totalReturn = eligible.reduce((s, a) => s + a.retorno, 0);
+  const pctBanca  = parseFloat(((totalAlloc / banca) * 100).toFixed(1));
+
+  const S = SURFACE, S2 = SURFACE2, B = BORDER;
+
+  return (
+    <div style={{background:S,border:`1px solid ${B}`,borderRadius:12,padding:"1.25rem",marginBottom:"1.25rem"}}>
+      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:"1rem"}}>
+        Simulador de alocação — Half-Kelly
+      </div>
+
+      {/* Controles */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:"1.25rem"}}>
+        {[
+          ["Banca (R$)", banca, v => setBanca(Number(v)), 100, 100000, 100],
+          ["Divergência mínima (pts)", minDiv, v => setMinDiv(Number(v)), 1, 20, 1],
+          ["Fração Kelly", kellyFrac, v => setKellyFrac(Number(v)), 0.1, 1, 0.1],
+          ["Teto por jogo (%)", maxPct, v => setMaxPct(Number(v)), 1, 20, 1],
+        ].map(([label, val, setter, min, max, step]) => (
+          <div key={label}>
+            <div style={{fontSize:9,color:TEXT3,marginBottom:4}}>{label}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <input type="range" min={min} max={max} step={step} value={val}
+                onChange={e => setter(e.target.value)}
+                style={{flex:1}}/>
+              <span style={{fontSize:13,fontWeight:700,color:TEXT,minWidth:40,textAlign:"right"}}>
+                {label.includes("Fração") ? val.toFixed(1) : val}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Acurácia histórica */}
+      <div style={{background:S2,borderRadius:8,padding:"8px 12px",marginBottom:"1rem",display:"flex",alignItems:"center",gap:12}}>
+        <div>
+          <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>Acurácia histórica (semana)</div>
+          <div style={{fontSize:16,fontWeight:800,color:histAccuracy>=0.5?HIT_COLOR:MISS_COLOR}}>
+            {hits.length}/{withOdds.length} — {Math.round(histAccuracy*100)}%
+          </div>
+        </div>
+        <div style={{width:1,height:32,background:B}}/>
+        <div style={{fontSize:10,color:TEXT3,lineHeight:1.5}}>
+          Probabilidade base usada no Kelly.<br/>Atualiza conforme mais jogos finalizam.
+        </div>
+      </div>
+
+      {todayGames.length === 0 && (
+        <div style={{textAlign:"center",padding:"1.5rem 0",color:TEXT3,fontSize:12}}>
+          Nenhum jogo agendado com odds disponíveis para hoje.
+        </div>
+      )}
+
+      {/* Jogos elegíveis */}
+      {eligible.length > 0 && (
+        <>
+          <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>
+            Jogos selecionados ({eligible.length})
+          </div>
+          {eligible.map(a => {
+            const hAbbr = a.game.home_abbr || a.game.home.split(" ").pop();
+            const aAbbr = a.game.away_abbr || a.game.away.split(" ").pop();
+            return (
+              <div key={a.game.id} style={{background:S2,border:`1px solid ${B}`,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:700,color:TEXT}}>{hAbbr} vs {aAbbr}</div>
+                    <div style={{fontSize:10,color:TEXT2,marginTop:2}}>
+                      Apostar: <span style={{color:a.side==="OVER"?HIT_COLOR:NBA_BLUE,fontWeight:700}}>{a.side} {getGameStats(a.game,savedOddsMap).overUnder}</span>
+                      &nbsp;·&nbsp;Diverg.: <span style={{color:TEXT}}>{a.divergence>0?"+":""}{a.divergence.toFixed(1)} pts</span>
+                      &nbsp;·&nbsp;P(acerto): <span style={{color:TEXT}}>{Math.round(a.p*100)}%</span>
+                    </div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:16,fontWeight:800,color:HIT_COLOR}}>R$ {a.alloc.toFixed(2)}</div>
+                    <div style={{fontSize:9,color:TEXT3}}>{a.cappedPct.toFixed(1)}% da banca</div>
+                    <div style={{fontSize:9,color:TEXT3}}>retorno: R$ {a.retorno.toFixed(2)}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Resumo */}
+          <div style={{background:S2,borderRadius:10,padding:"10px 12px",border:`1px solid ${B}`,marginTop:4}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              {[
+                ["Total alocado", `R$ ${totalAlloc.toFixed(2)}`],
+                ["% da banca", `${pctBanca}%`],
+                ["Retorno potencial", `R$ ${totalReturn.toFixed(2)}`],
+              ].map(([l,v]) => (
+                <div key={l} style={{textAlign:"center"}}>
+                  <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>{l}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:TEXT}}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Jogos excluídos */}
+      {excluded.length > 0 && (
+        <div style={{marginTop:"1rem"}}>
+          <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>
+            Excluídos ({excluded.length})
+          </div>
+          {excluded.map(a => {
+            const hAbbr = a.game.home_abbr || a.game.home.split(" ").pop();
+            const aAbbr = a.game.away_abbr || a.game.away.split(" ").pop();
+            return (
+              <div key={a.game.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",borderRadius:8,background:S2,marginBottom:4,opacity:0.5}}>
+                <span style={{fontSize:11,color:TEXT2}}>{hAbbr} vs {aAbbr}</span>
+                <span style={{fontSize:10,color:TEXT3}}>{a.reason}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{fontSize:9,color:TEXT3,marginTop:"1rem",lineHeight:1.6}}>
+        Odds padrão O/U: -110 (1.91x) · Half-Kelly aplicado · Modelo para fins analíticos
+      </div>
+    </div>
+  );
+}
   const pct=total>0?(above/total)*100:0,col=pct>=50?GREEN:NBA_RED;
   return(
     <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -527,6 +723,14 @@ function App(){
             </div>
           ))}
         </div>
+
+        {/* Simulador Kelly */}
+        <BettingSimulator
+          schedule={schedule}
+          weekDates={weekDates}
+          savedOddsMap={savedOddsMap}
+          selDate={selDate}
+        />
 
         {/* Relatório de acertos */}
         <AccuracyReport schedule={schedule} weekDates={weekDates} selDate={selDate} savedOddsMap={savedOddsMap}/>
