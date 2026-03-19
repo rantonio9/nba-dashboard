@@ -567,9 +567,9 @@ function App() {
         </div>
       </div>
 
-      <div style={{maxWidth:1800,margin:"0 auto",padding:"1.25rem 2rem 1.25rem 2rem",display:"grid",gridTemplateColumns:"1fr 460px",gap:24,alignItems:"start",paddingRight:0}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 460px",gap:0,alignItems:"start",width:"100%"}}>
         {/* Coluna principal — centralizada */}
-        <div style={{maxWidth:760,margin:"0 auto",width:"100%"}}>
+        <div style={{maxWidth:760,margin:"0 auto",width:"100%",padding:"1.25rem 0 1.25rem 2rem"}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:"1.25rem"}}>
             {[["Jogos",selGames.length||"—"],["Finalizados",finals||"—"],["Maior total proj.",maxProj?`${Math.round(maxProj)} pts`:"—"]].map(([l,v])=>(
               <div key={l} style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:10,padding:"0.75rem 1rem"}}>
@@ -590,9 +590,11 @@ function App() {
           </div>
         </div>
 
-        {/* Sidebar — simulador fixo */}
-        <div style={{position:"sticky",top:16}}>
-          <BettingSimulator schedule={schedule} weekDates={weekDates} savedOddsMap={savedOddsMap} selDate={selDate}/>
+        {/* Sidebar — simulador colado na direita */}
+        <div style={{position:"sticky",top:0,height:"100vh",overflowY:"auto",borderLeft:`1px solid ${BORDER}`,background:SURFACE}}>
+          <div style={{padding:"1.25rem"}}>
+            <BettingSimulator schedule={schedule} weekDates={weekDates} savedOddsMap={savedOddsMap} selDate={selDate}/>
+          </div>
         </div>
       </div>
     </div>
