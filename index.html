@@ -192,24 +192,26 @@ function BettingSimulator({schedule, weekDates, savedOddsMap, selDate}) {
             const hA=a.game.home_abbr||a.game.home.split(" ").pop();
             const aA=a.game.away_abbr||a.game.away.split(" ").pop();
             return (
-              <div key={a.game.id} style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                  <div style={{fontSize:12,fontWeight:700,color:TEXT}}>{hA} vs {aA}</div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:16,fontWeight:800,color:HIT_COLOR}}>R$ {a.alloc.toFixed(2)}</div>
-                    <div style={{fontSize:9,color:TEXT3}}>{a.cappedPct.toFixed(1)}% da banca</div>
-                    <div style={{fontSize:9,color:TEXT3}}>retorno: R$ {a.retorno.toFixed(2)}</div>
+              <div key={a.game.id} style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:15,fontWeight:700,color:TEXT,marginBottom:5}}>{hA} vs {aA}</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                      <div style={{fontSize:11,color:TEXT2}}>
+                        Apostar: <span style={{color:a.side==="OVER"?HIT_COLOR:NBA_BLUE,fontWeight:700}}>{a.side} {a.overUnder}</span>
+                      </div>
+                      <div style={{fontSize:11,color:TEXT2}}>
+                        Divergência: <span style={{color:TEXT}}>{a.div>0?"+":""}{a.div.toFixed(1)} pts</span>
+                      </div>
+                      <div style={{fontSize:11,color:TEXT2}}>
+                        P(acerto): <span style={{color:TEXT}}>{Math.round(a.p*100)}%</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                  <div style={{fontSize:10,color:TEXT2}}>
-                    Apostar: <span style={{color:a.side==="OVER"?HIT_COLOR:NBA_BLUE,fontWeight:700}}>{a.side} {a.overUnder}</span>
-                  </div>
-                  <div style={{fontSize:10,color:TEXT2}}>
-                    Divergência: <span style={{color:TEXT}}>{a.div>0?"+":""}{a.div.toFixed(1)} pts</span>
-                  </div>
-                  <div style={{fontSize:10,color:TEXT2}}>
-                    P(acerto): <span style={{color:TEXT}}>{Math.round(a.p*100)}%</span>
+                  <div style={{textAlign:"right",flexShrink:0,marginLeft:12}}>
+                    <div style={{fontSize:18,fontWeight:800,color:HIT_COLOR}}>R$ {a.alloc.toFixed(2)}</div>
+                    <div style={{fontSize:10,color:TEXT3,marginTop:2}}>{a.cappedPct.toFixed(1)}% da banca</div>
+                    <div style={{fontSize:10,color:TEXT3}}>retorno: R$ {a.retorno.toFixed(2)}</div>
                   </div>
                 </div>
               </div>
@@ -527,7 +529,7 @@ function App() {
       {editing&&<EditModal game={editing} onSave={handleSave} onClose={()=>setEditing(null)}/>}
 
       <div style={{background:SURFACE,borderBottom:`1px solid ${BORDER}`}}>
-                  <div style={{maxWidth:1220,margin:"0 auto",padding:"1rem 1rem 0"}}>
+                  <div style={{maxWidth:1800,margin:"0 auto",padding:"1rem 2rem 0"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{display:"flex",borderRadius:4,overflow:"hidden"}}>
@@ -565,9 +567,9 @@ function App() {
         </div>
       </div>
 
-      <div style={{maxWidth:1220,margin:"0 auto",padding:"1.25rem 1rem",display:"grid",gridTemplateColumns:"1fr 500px",gap:16,alignItems:"start"}}>
-        {/* Coluna principal */}
-        <div>
+      <div style={{maxWidth:1800,margin:"0 auto",padding:"1.25rem 2rem",display:"grid",gridTemplateColumns:"1fr 460px",gap:24,alignItems:"start"}}>
+        {/* Coluna principal — centralizada */}
+        <div style={{maxWidth:760,margin:"0 auto",width:"100%"}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:"1.25rem"}}>
             {[["Jogos",selGames.length||"—"],["Finalizados",finals||"—"],["Maior total proj.",maxProj?`${Math.round(maxProj)} pts`:"—"]].map(([l,v])=>(
               <div key={l} style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:10,padding:"0.75rem 1rem"}}>
