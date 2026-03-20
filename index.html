@@ -80,8 +80,8 @@ function getGameStats(game,savedOddsMap){
 }
 
 // ── Lógicas de sugestão ──────────────────────────────────────────
-// threshold: maioria simples — above > total/2
-function fieldIsAbove(above,total){return total>0&&above>total/2;}
+// threshold: maioria simples — above >= total/2 (empate conta como acima)
+function fieldIsAbove(above,total){return total>0&&above*2>=total;}
 
 function countFields(histData){
   if(!histData)return{above:0,below:0,total:0};
