@@ -804,8 +804,7 @@ function RulesAnalysis({schedule,weekDates,savedOddsMap,sport}){
 // ══════════════════════════════════════════════════════════════════
 // ── App ───────────────────────────────────────────────────────────
 function App(){
-  const [window,setWindow]=useState("past"); // "past" | "next"
-  const weekDates = window==="past" ? getLast7Dates() : getNext7Dates();
+  const weekDates = getDateWindow();
   const todayStr=getBrazilToday();
   const [sportId,setSportId]=useState("nba");       // "nba" | "bra"
   const [activeTab,setActiveTab]=useState("jogos"); // "jogos" | "regras"
@@ -823,20 +822,20 @@ function App(){
   const updatedAt=updatedAts[sportId];
 
   // Carrega dados de um esporte
-  async function loadSport(sid, win){
+  async function loadSport(sid){
     setLoadings(p=>({...p,[sid]:true}));
     try{
-      const dates = win==="past" ? getLast7Dates() : getNext7Dates();
-      const endpoint=sid==="bra"?"/api/games-soccer":"/api/games";
+      const dates=getDateWindow();
       const start=dates[0].replace(/-/g,"");
-      const end=dates[6].replace(/-/g,"");
+      const end=dates[13].replace(/-/g,"");
+      const endpoint=sid==="bra"?"/api/games-soccer":"/api/games";
       const r=await fetch(`${endpoint}?bust=${Date.now()}&start=${start}&end=${end}`);
       const d=await r.json();
       if(d.schedule){
         setSchedules(p=>({...p,[sid]:d.schedule}));
         setUpdatedAts(p=>({...p,[sid]:new Date()}));
         const allGames=Object.values(d.schedule).flat();
-        await saveOddsToKV(allGames, SPORTS[sid]);
+        await saveOddsToKV(allGames,SPORTS[sid]);
         const finalIds=allGames.filter(g=>g.status==="Final"&&!g.over_under).map(g=>String(g.id));
         if(finalIds.length){
           const om=await loadOddsFromKV(finalIds);
@@ -848,11 +847,10 @@ function App(){
   }
 
   useEffect(()=>{
-    loadSport("nba", window);
-    loadSport("bra", window);
-    const id=setInterval(()=>{loadSport("nba",window);loadSport("bra",window);},30*60*1000);
+    loadSport("nba");loadSport("bra");
+    const id=setInterval(()=>{loadSport("nba");loadSport("bra");},30*60*1000);
     return()=>clearInterval(id);
-  },[window]);
+  },[]);
 
   const selGames=schedule[selDate]||[];
   const finals=selGames.filter(g=>g.status==="Final").length;
@@ -918,52 +916,45 @@ function App(){
         </div>
       </div>
 
-      {/* ── Day selector (só aba jogos) ── */}
+      {/* ── Day selector carrossel ── */}
       {activeTab==="jogos"&&(
         <div style={{background:SURFACE,borderBottom:`1px solid ${BORDER}`}}>
-          <div style={{maxWidth:1800,margin:"0 auto",padding:"0 2rem"}}>
-            {/* Toggle últimos 7 / próximos 7 */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:8,paddingBottom:4}}>
-              <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em"}}>
-                {window==="past"?"Últimos 7 dias":"Próximos 7 dias"}
-              </div>
-              <div style={{display:"flex",border:`1px solid ${BORDER}`,borderRadius:6,overflow:"hidden"}}>
-                {[["past","← Passados"],["next","Futuros →"]].map(([w,label])=>(
-                  <button key={w} onClick={()=>{setWindow(w);setSelDate(w==="past"?todayStr:getNext7Dates()[0]);}}
-                    style={{padding:"4px 12px",fontSize:11,fontWeight:window===w?700:400,
-                      background:window===w?sport.primary:"transparent",
-                      color:window===w?"#fff":TEXT3,border:"none",cursor:"pointer",
-                      borderRight:w==="past"?`1px solid ${BORDER}`:"none"}}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
-              {weekDates.map(d=>{
-                const isToday=d===todayStr,isSel=d===selDate;
-                const games=schedule[d]||[];
-                const fin=games.filter(g=>g.status==="Final").length,tot=games.length;
-                const dayName=DAYS_PT[new Date(d+"T12:00:00").getDay()];
-                const dayNum=new Date(d+"T12:00:00").getDate();
-                const dayHits=games.filter(g=>g.status==="Final"&&getGameStats(g,savedOddsMap,sport).result==="hit").length;
-                const dayWithOdds=games.filter(g=>g.status==="Final"&&!!getGameStats(g,savedOddsMap,sport).overUnder).length;
-                return(
-                  <button key={d} onClick={()=>setSelDate(d)} style={{
-                    background:isSel?sport.primary:"transparent",
-                    color:isSel?"#fff":isToday?sport.primary:TEXT2,
-                    border:"none",
-                    borderBottom:isSel?`3px solid ${sport.secondary}`:isToday?`3px solid ${sport.primary}`:"3px solid transparent",
-                    padding:"8px 4px 10px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderRadius:"4px 4px 0 0",
-                  }}>
-                    <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>{dayName}</span>
-                    <span style={{fontSize:15,fontWeight:800}}>{dayNum}</span>
-                    <span style={{fontSize:9,color:isSel?"rgba(255,255,255,0.6)":TEXT3}}>{tot>0?(fin>0?`${fin}/${tot}`:`${tot}j`):"—"}</span>
-                    {dayWithOdds>0&&<span style={{fontSize:8,color:isSel?"rgba(255,255,255,0.5)":dayHits/dayWithOdds>=0.5?"rgba(0,200,83,0.8)":"rgba(200,16,46,0.8)"}}>{dayHits}/{dayWithOdds}</span>}
-                  </button>
-                );
-              })}
-            </div>
+          <div style={{
+            display:"flex",overflowX:"auto",scrollbarWidth:"none",
+            msOverflowStyle:"none",padding:"0 2rem",
+          }} id="day-carousel">
+            <style>{`#day-carousel::-webkit-scrollbar{display:none}`}</style>
+            {weekDates.map(d=>{
+              const isToday=d===todayStr, isSel=d===selDate;
+              const isPast=d<todayStr;
+              const games=schedule[d]||[];
+              const fin=games.filter(g=>g.status==="Final").length, tot=games.length;
+              const dayName=DAYS_PT[new Date(d+"T12:00:00").getDay()];
+              const dayNum=new Date(d+"T12:00:00").getDate();
+              const dayHits=games.filter(g=>g.status==="Final"&&getGameStats(g,savedOddsMap,sport).result==="hit").length;
+              const dayWithOdds=games.filter(g=>g.status==="Final"&&!!getGameStats(g,savedOddsMap,sport).overUnder).length;
+              return(
+                <button key={d} id={isToday?"day-today":undefined} onClick={()=>setSelDate(d)} style={{
+                  flexShrink:0,width:72,
+                  background:isSel?sport.primary:"transparent",
+                  color:isSel?"#fff":isToday?sport.primary:isPast?TEXT3:TEXT2,
+                  border:"none",
+                  borderBottom:isSel?`3px solid ${sport.secondary}`:isToday?`3px solid ${sport.primary}`:"3px solid transparent",
+                  padding:"8px 4px 10px",cursor:"pointer",
+                  display:"flex",flexDirection:"column",alignItems:"center",gap:2,
+                  borderRadius:"4px 4px 0 0",
+                }}>
+                  <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>{dayName}</span>
+                  <span style={{fontSize:15,fontWeight:800}}>{dayNum}</span>
+                  <span style={{fontSize:9,color:isSel?"rgba(255,255,255,0.6)":TEXT3}}>
+                    {tot>0?(fin>0?`${fin}/${tot}`:`${tot}j`):"—"}
+                  </span>
+                  {dayWithOdds>0&&<span style={{fontSize:8,color:isSel?"rgba(255,255,255,0.5)":dayHits/dayWithOdds>=0.5?"rgba(0,200,83,0.8)":"rgba(200,16,46,0.8)"}}>
+                    {dayHits}/{dayWithOdds}
+                  </span>}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
