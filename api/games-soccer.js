@@ -94,25 +94,47 @@ function parseGame(ev) {
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
 
-  if (cache.data && Date.now() - cache.ts < CACHE_TTL) {
-    res.setHeader("X-Cache", "HIT");
-    return res.status(200).json(cache.data);
-  }
-
   try {
-    const today = getBrazilToday();
-    const qStart = req.query.start;
-    const qEnd   = req.query.end;
+    const defaults = getLast14Dates();
+    const startStr = req.query.start || defaults[0].replace(/-/g, "");
+    const endStr   = req.query.end   || defaults[13].replace(/-/g, "");
+    const cacheKey = `${startStr}-${endStr}`;
 
-    const startStr = qStart || getLast7Dates(today)[0].replace(/-/g,"");
-    const endStr   = qEnd   || getLast7Dates(today)[6].replace(/-/g,"");
-    const startDate = new Date(`${startStr.slice(0,4)}-${startStr.slice(4,6)}-${startStr.slice(6,8)}T12:00:00`);
-    const endDate   = new Date(`${endStr.slice(0,4)}-${endStr.slice(4,6)}-${endStr.slice(6,8)}T12:00:00`);
-    const diffDays  = Math.round((endDate-startDate)/(1000*60*60*24))+1;
-    const dates = Array.from({length:diffDays},(_,i)=>{
-      const d=new Date(startDate); d.setDate(startDate.getDate()+i);
-      return d.toISOString().split("T")[0];
+    if (cache[cacheKey] && Date.now() - cache[cacheKey].ts < CACHE_TTL) {
+      res.setHeader("X-Cache", "HIT");
+      return res.status(200).json(cache[cacheKey].data);
+    }
+
+    const dates = buildDates(startStr, endStr);
+    const data   = await espnFetch(`/scoreboard?dates=${startStr}-${endStr}&limit=200`);
+    const events = data.events || [];
+
+    const scheduleRaw = {};
+    dates.forEach(d => { scheduleRaw[d] = []; });
+
+    events.forEach(ev => {
+      const brt  = new Date(new Date(ev.date).getTime() - 3 * 60 * 60 * 1000);
+      const date = brt.toISOString().split("T")[0];
+      if (scheduleRaw[date] !== undefined) {
+        const game = parseGame(ev);
+        if (game.home) scheduleRaw[date].push(game);
+      }
     });
+
+    const result = { schedule: scheduleRaw, updatedAt: new Date().toISOString() };
+    cache[cacheKey] = { data: result, ts: Date.now() };
+    res.setHeader("X-Cache", "MISS");
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json(result);
+  } catch (e) {
+    const fallback = Object.values(cache)[0];
+    if (fallback) {
+      res.setHeader("X-Cache", "STALE");
+      return res.status(200).json(fallback.data);
+    }
+    return res.status(500).json({ error: e.message });
+  }
+}
 
     const data   = await espnFetch(`/scoreboard?dates=${start}-${end}&limit=100`);
     const events = data.events || [];
