@@ -123,6 +123,48 @@ function suggestion3(histData){
   if(below>=3)return"UNDER";
   return"NÃO APOSTE";
 }
+
+/**
+ * Regra 4 — Campos como árbitro:
+ * Se PPG e campos apontam direções OPOSTAS e campos ≥3 → seguir campos
+ * Se PPG e campos apontam a MESMA direção → seguir essa direção
+ * Se campos < 3 concordando → seguir PPG
+ */
+function suggestion4(proj, overUnder, histData){
+  const base = suggestion1(proj, overUnder);
+  if(!base) return null;
+  if(!histData) return base; // sem histórico, usa PPG
+  const{above,below,total}=countFields(histData);
+  if(total<3) return base; // poucos dados, usa PPG
+
+  const camposDir = above>=3?"OVER": below>=3?"UNDER": null;
+
+  if(!camposDir) return base;            // campos inconclusivos → PPG
+  if(camposDir===base) return base;      // mesma direção → confirma
+  return camposDir;                      // direção oposta → campos vencem
+}
+
+/**
+ * Regra 5 — Convergência Forte:
+ * Só aposta quando PPG e campos apontam a MESMA direção
+ * E a divergência PPG vs Odd é >= 5 pts (sinal mais forte).
+ * Caso contrário → NÃO APOSTE
+ */
+function suggestion5(proj, overUnder, histData){
+  const base = suggestion1(proj, overUnder);
+  if(!base||!overUnder) return null;
+  if(!histData) return null;
+  const{above,below,total}=countFields(histData);
+  if(total<3) return null;
+
+  const div = Math.abs(proj - overUnder);
+  if(div < 5) return"NÃO APOSTE"; // divergência fraca
+
+  const camposDir = above>=3?"OVER": below>=3?"UNDER": null;
+  if(!camposDir) return"NÃO APOSTE";    // campos inconclusivos
+  if(camposDir !== base) return"NÃO APOSTE"; // sinais conflitantes
+  return base;                           // tudo alinhado → aposta
+}
 function calcResultForSuggestion(suggestion,overUnder,realTotal){
   if(!suggestion||!overUnder||realTotal==null)return null;
   if(suggestion==="NÃO APOSTE")return"skip";
@@ -524,10 +566,14 @@ function RulesAnalysis({schedule, weekDates, savedOddsMap}){
       const sug1 = suggestion1(proj, overUnder);
       const sug2 = suggestion2(proj, overUnder, histData);
       const sug3 = suggestion3(histData);
+      const sug4 = suggestion4(proj, overUnder, histData);
+      const sug5 = suggestion5(proj, overUnder, histData);
 
       const res1 = calcResultForSuggestion(sug1, overUnder, realTotal);
       const res2 = calcResultForSuggestion(sug2, overUnder, realTotal);
       const res3 = calcResultForSuggestion(sug3, overUnder, realTotal);
+      const res4 = calcResultForSuggestion(sug4, overUnder, realTotal);
+      const res5 = calcResultForSuggestion(sug5, overUnder, realTotal);
 
       const hAbbr = g.home_abbr || g.home.split(" ").pop();
       const aAbbr = g.away_abbr || g.away.split(" ").pop();
@@ -540,7 +586,7 @@ function RulesAnalysis({schedule, weekDates, savedOddsMap}){
         {label:`${aAbbr} ult5`, above: histData.away.last5.above, total: histData.away.last5.total},
       ] : null;
 
-      return { g, hAbbr, aAbbr, proj, overUnder, realTotal, sug1,sug2,sug3, res1,res2,res3, histData, fields };
+      return { g, hAbbr, aAbbr, proj, overUnder, realTotal, sug1,sug2,sug3,sug4,sug5, res1,res2,res3,res4,res5, histData, fields };
     })).then(results => {
       if(mountedRef.current){
         setRows(results);
@@ -558,22 +604,30 @@ function RulesAnalysis({schedule, weekDates, savedOddsMap}){
   const h1=count(r=>r.res1), t1=total(r=>r.res1);
   const h2=count(r=>r.res2), t2=total(r=>r.res2), s2=skipped(r=>r.res2);
   const h3=count(r=>r.res3), t3=total(r=>r.res3), s3=skipped(r=>r.res3);
+  const h4=count(r=>r.res4), t4=total(r=>r.res4), s4=skipped(r=>r.res4);
+  const h5=count(r=>r.res5), t5=total(r=>r.res5), s5=skipped(r=>r.res5);
 
   const best = [
     {i:1, pct: pct(h1,t1)},
     {i:2, pct: pct(h2,t2)},
     {i:3, pct: pct(h3,t3)},
+    {i:4, pct: pct(h4,t4)},
+    {i:5, pct: pct(h5,t5)},
   ].sort((a,b)=>b.pct-a.pct)[0]?.i;
 
   const RULE_LABELS = [
     "Regra 1 — PPG vs Odd",
     "Regra 2 — PPG + Campos",
     "Regra 3 — Só Campos",
+    "Regra 4 — Campos árbitro",
+    "Regra 5 — Convergência forte",
   ];
   const RULE_DESC = [
     "Proj PPG > Odd → OVER | Proj PPG < Odd → UNDER",
     "Mesma direção do PPG, validada por ≥3/4 campos",
     "≥3 campos acima → OVER | ≥3 abaixo → UNDER | senão N/A",
+    "Campos conflitam com PPG e ≥3 → seguir campos; senão PPG",
+    "PPG + campos mesma direção E divergência ≥5pts; senão N/A",
   ];
 
   if(loading){
@@ -601,8 +655,8 @@ function RulesAnalysis({schedule, weekDates, savedOddsMap}){
       </div>
 
       {/* Cards de resumo */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:"2rem"}}>
-        {[[h1,t1,0,0],[h2,t2,s2,1],[h3,t3,s3,2]].map(([h,t,sk,i])=>{
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:"2rem"}}>
+        {[[h1,t1,0,0],[h2,t2,s2,1],[h3,t3,s3,2],[h4,t4,s4,3],[h5,t5,s5,4]].map(([h,t,sk,i])=>{
           const p=pct(h,t);
           const isBest = (i+1)===best;
           const colBorder = isBest ? YELLOW : BORDER;
@@ -628,34 +682,32 @@ function RulesAnalysis({schedule, weekDates, savedOddsMap}){
       <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Detalhe por jogo</div>
       <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,overflow:"hidden"}}>
         {/* cabeçalho */}
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 4fr",gap:0,borderBottom:`1px solid ${BORDER}`,padding:"8px 14px"}}>
-          {["Jogo","Total real","O/U","Regra 1","Regra 2","Regra 3"].map(h=>(
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 1fr 4fr",gap:0,borderBottom:`1px solid ${BORDER}`,padding:"8px 14px"}}>
+          {["Jogo","Total real","O/U","R1","R2","R3","R4","R5 + campos"].map(h=>(
             <div key={h} style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>{h}</div>
           ))}
         </div>
-        {rows.map(({g,hAbbr,aAbbr,overUnder,realTotal,sug1,sug2,sug3,res1,res2,res3,fields},idx)=>(
+        {rows.map(({g,hAbbr,aAbbr,overUnder,realTotal,sug1,sug2,sug3,sug4,sug5,res1,res2,res3,res4,res5,fields},idx)=>(
           <div key={g.id} style={{borderBottom:idx<rows.length-1?`1px solid ${BORDER}`:"none"}}>
-            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 4fr",gap:0,padding:"10px 14px",alignItems:"center"}}>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 1fr 4fr",gap:0,padding:"10px 14px",alignItems:"center"}}>
               {/* Jogo */}
               <div>
                 <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{hAbbr} vs {aAbbr}</div>
                 <div style={{fontSize:10,color:TEXT3}}>{g.home.split(" ").slice(-1)[0]} vs {g.away.split(" ").slice(-1)[0]}</div>
               </div>
-              {/* Total real */}
               <div style={{fontSize:14,fontWeight:700,color:TEXT}}>{realTotal}</div>
-              {/* Linha O/U */}
               <div style={{fontSize:13,color:TEXT2}}>{overUnder?.toFixed(1)}</div>
-              {/* Regra 1 */}
               <div><RuleChip suggestion={sug1} result={res1}/></div>
-              {/* Regra 2 */}
               <div><RuleChip suggestion={sug2} result={res2}/></div>
-              {/* Regra 3 + campos */}
+              <div><RuleChip suggestion={sug3} result={res3}/></div>
+              <div><RuleChip suggestion={sug4} result={res4}/></div>
+              {/* R5 + campos */}
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                <RuleChip suggestion={sug3} result={res3}/>
+                <RuleChip suggestion={sug5} result={res5}/>
                 {fields&&(
-                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:2}}>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
                     {fields.map(f=>{
-                      const isAbove = fieldIsAbove(f.above, f.total);
+                      const isAbove=fieldIsAbove(f.above,f.total);
                       return(
                         <span key={f.label} style={{fontSize:9,color:isAbove?GREEN:MISS_COLOR,background:isAbove?"rgba(0,200,83,0.08)":"rgba(200,16,46,0.08)",border:`1px solid ${isAbove?"rgba(0,200,83,0.2)":"rgba(200,16,46,0.2)"}`,borderRadius:4,padding:"1px 5px"}}>
                           {f.label} {f.above}/{f.total}
