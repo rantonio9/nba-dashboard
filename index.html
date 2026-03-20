@@ -257,6 +257,81 @@ function OddsPanel({proj,overUnder,spread,result,realTotal,sport}){
   </div>);
 }
 
+// ── BetScorePanel — painel de score para futebol ─────────────────
+function BetScorePanel({bet}){
+  if(!bet) return null;
+  const {score,breakdown,profiles}=bet;
+  const scoreColor = score>=7?HIT_COLOR:score>=5.5?"#FFD600":score>=4?TEXT2:MISS_COLOR;
+  const activeProfile = profiles.precision?"Precisão":profiles.balanced?"Equilíbrio":profiles.volume?"Volume":null;
+  const profileColor  = profiles.precision?HIT_COLOR:profiles.balanced?"#FFD600":profiles.volume?TEXT2:MISS_COLOR;
+
+  return(<div style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"1rem",marginTop:"1rem"}}>
+    {/* Cabeçalho score */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}}>
+      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em"}}>Score de aposta</div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        {activeProfile?(
+          <div style={{padding:"2px 10px",borderRadius:20,background:profileColor+"22",border:`1px solid ${profileColor}66`}}>
+            <span style={{fontSize:10,fontWeight:700,color:profileColor}}>
+              {activeProfile==="Precisão"?"🎯":activeProfile==="Equilíbrio"?"⚖️":"📊"} Apostar ({activeProfile})
+            </span>
+          </div>
+        ):(
+          <div style={{padding:"2px 10px",borderRadius:20,background:"rgba(80,80,80,0.2)",border:`1px solid ${BORDER}`}}>
+            <span style={{fontSize:10,color:TEXT3}}>Não apostar</span>
+          </div>
+        )}
+      </div>
+    </div>
+
+    {/* Score grande + barra */}
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:"0.75rem"}}>
+      <div style={{fontSize:40,fontWeight:800,color:scoreColor,lineHeight:1,minWidth:52}}>{score}</div>
+      <div style={{flex:1}}>
+        <div style={{height:8,background:SURFACE,borderRadius:4,overflow:"hidden",marginBottom:4}}>
+          <div style={{width:`${(score/10)*100}%`,height:"100%",background:scoreColor,borderRadius:4,transition:"width .3s"}}/>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:TEXT3}}>
+          <span>0</span>
+          <span style={{color:MISS_COLOR}}>4 volume</span>
+          <span style={{color:TEXT2}}>5.5 equil.</span>
+          <span style={{color:HIT_COLOR}}>7 precisão</span>
+          <span>10</span>
+        </div>
+      </div>
+    </div>
+
+    {/* Breakdown */}
+    <div style={{borderTop:`1px solid ${BORDER}`,paddingTop:"0.75rem"}}>
+      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Detalhamento</div>
+      {breakdown.map((b,i)=>(
+        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 0",borderBottom:i<breakdown.length-1?`1px solid ${BORDER}22`:"none"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:10,color:b.ok?HIT_COLOR:b.pts<0?MISS_COLOR:TEXT3}}>{b.ok?"✓":b.pts<0?"✗":"○"}</span>
+            <span style={{fontSize:11,color:b.ok?TEXT:b.pts<0?MISS_COLOR:TEXT3}}>{b.label}</span>
+          </div>
+          <span style={{fontSize:11,fontWeight:700,color:b.pts>0?HIT_COLOR:b.pts<0?MISS_COLOR:TEXT3}}>
+            {b.pts>0?"+":""}{b.pts}
+          </span>
+        </div>
+      ))}
+    </div>
+
+    {/* Perfis */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:"0.75rem"}}>
+      {[["🎯 Precisão",profiles.precision,7],["⚖️ Equilíbrio",profiles.balanced,5.5],["📊 Volume",profiles.volume,4]].map(([label,active,thr])=>(
+        <div key={label} style={{textAlign:"center",padding:"5px 4px",borderRadius:6,
+          background:active?"rgba(0,200,83,0.08)":"rgba(80,80,80,0.1)",
+          border:`1px solid ${active?"rgba(0,200,83,0.3)":BORDER}`}}>
+          <div style={{fontSize:10,color:active?HIT_COLOR:TEXT3}}>{label}</div>
+          <div style={{fontSize:9,color:TEXT3}}>≥ {thr} pts</div>
+          <div style={{fontSize:11,fontWeight:700,color:active?HIT_COLOR:TEXT3}}>{active?"✓":"✗"}</div>
+        </div>
+      ))}
+    </div>
+  </div>);
+}
+
 function HistoryPanel({homeId,awayId,matchupAvg,homeAbbr,awayAbbr,sport,onLoaded}){
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(false);
@@ -282,13 +357,15 @@ function HistoryPanel({homeId,awayId,matchupAvg,homeAbbr,awayAbbr,sport,onLoaded
       <div key={label} style={{marginBottom:"0.85rem"}}>
         <div style={{fontSize:10,color:TEXT2,marginBottom:6,fontWeight:500}}>{label}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 36px 1fr",gap:8,alignItems:"center"}}>
-          <div><div style={{fontSize:11,color:TEXT3,marginBottom:4}}>{homeAbbr}</div><ScoreBar above={hA} total={hn}/></div>
+          <div><div style={{fontSize:11,color:TEXT3,marginBottom:4}}>{homeAbbr} {isBra?"(ataque)":""}</div><ScoreBar above={hA} total={hn}/></div>
           <div style={{textAlign:"center",fontSize:9,color:TEXT3}}>vs</div>
-          <div><div style={{fontSize:11,color:TEXT3,marginBottom:4}}>{awayAbbr}</div><ScoreBar above={aA} total={an}/></div>
+          <div><div style={{fontSize:11,color:TEXT3,marginBottom:4}}>{awayAbbr} {isBra?"(defesa)":""}</div><ScoreBar above={aA} total={an}/></div>
         </div>
       </div>
     ))}
-    {data&&<div style={{fontSize:9,color:TEXT3,marginTop:4}}>{isBra?"Campos 1-2: gols marcados. Campos 3-4: gols sofridos.":"Dados reais ESPN"}</div>}
+    {/* Score de aposta — só para futebol */}
+    {isBra&&data?.bet&&<BetScorePanel bet={data.bet}/>}
+    {data&&<div style={{fontSize:9,color:TEXT3,marginTop:8}}>{isBra?"Ataque: gols marcados pelo mandante · Defesa: gols sofridos pelo visitante":"Dados reais ESPN"}</div>}
   </div>);
 }
 
@@ -491,11 +568,129 @@ function BettingSimulator({schedule,dates,savedOddsMap,selDate,sport}){
   </div>);
 }
 
-function RulesAnalysis({schedule,dates,savedOddsMap,sport}){
+// ── RulesAnalysis — NBA + Brasileirão ────────────────────────────
+function RulesAnalysisSoccer({schedule,dates,savedOddsMap,sport}){
   const [rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true);
   const mountedRef=useRef(true);
-  const isBra=sport.id==="bra";
+  useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false;};},[]);
+  useEffect(()=>{
+    const finals=dates.flatMap(d=>(schedule[d]||[])).filter(g=>g.status==="Final");
+    if(!finals.length){setLoading(false);setRows([]);return;}
+    setLoading(true);
+    Promise.all(finals.map(async g=>{
+      const{avg,realTotal}=getGameStats(g,savedOddsMap,sport);
+      const hA=g.home_abbr||g.home.split(" ").pop();
+      const aA=g.away_abbr||g.away.split(" ").pop();
+      if(!g.home_id||!g.away_id||realTotal==null) return null;
+      try{
+        const r=await fetch(`/api/history-soccer?home_id=${g.home_id}&away_id=${g.away_id}&matchup_avg=${avg}`);
+        const d=await r.json();
+        return{g,hA,aA,realTotal,avg,bet:d.bet||null,home:d.home,away:d.away};
+      }catch{return null;}
+    })).then(res=>{
+      if(mountedRef.current){setRows(res.filter(Boolean));setLoading(false);}
+    });
+  },[schedule,dates]);
+
+  if(loading) return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Carregando análise...</div>;
+  if(!rows.length) return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Nenhum jogo finalizado disponível.</div>;
+
+  // Acertos por perfil: jogo "acertou" se o mandante marcou (realTotal > 0) e o perfil recomendou apostar
+  const profileKeys=[["precision","🎯 Precisão",7],["balanced","⚖️ Equilíbrio",5.5],["volume","📊 Volume",4]];
+  const pStats=profileKeys.map(([key,label,thr])=>{
+    const recommended=rows.filter(r=>r.bet?.profiles?.[key]);
+    const hits=recommended.filter(r=>r.realTotal>0); // mandante marcou
+    return{key,label,thr,rec:recommended.length,hits:hits.length,total:rows.length};
+  });
+
+  return(<div style={{padding:"1.5rem 2rem",maxWidth:1000,margin:"0 auto"}}>
+    <div style={{marginBottom:"1.5rem"}}>
+      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.15em",marginBottom:4}}>Análise comparativa — Brasileirão</div>
+      <div style={{fontSize:22,fontWeight:800,color:TEXT}}>Score de Aposta por Perfil</div>
+      <div style={{fontSize:12,color:TEXT2,marginTop:4}}>{rows.length} jogo(s) finalizado(s) · zona neutra ±0.5 gols</div>
+    </div>
+
+    {/* Cards de perfil */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:"2rem"}}>
+      {pStats.map(({key,label,thr,rec,hits,total})=>{
+        const pct=rec>0?Math.round((hits/rec)*100):0;
+        return(<div key={key} style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,padding:"1.25rem"}}>
+          <div style={{fontSize:14,marginBottom:6}}>{label}</div>
+          <div style={{fontSize:9,color:TEXT3,marginBottom:8}}>Score ≥ {thr} pts</div>
+          <div style={{fontSize:36,fontWeight:800,color:pct>=55?HIT_COLOR:pct>=45?YELLOW:MISS_COLOR,lineHeight:1,marginBottom:4}}>{pct}%</div>
+          <div style={{fontSize:13,color:TEXT2,marginBottom:8}}>{hits}/{rec} mandantes marcaram</div>
+          <div style={{height:5,background:SURFACE2,borderRadius:3,overflow:"hidden",marginBottom:8}}>
+            <div style={{width:`${pct}%`,height:"100%",background:pct>=55?HIT_COLOR:pct>=45?YELLOW:MISS_COLOR,borderRadius:3}}/>
+          </div>
+          <div style={{fontSize:10,color:TEXT3}}>{rec}/{total} jogos recomendados</div>
+        </div>);
+      })}
+    </div>
+
+    {/* Tabela jogo a jogo */}
+    <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Detalhe por jogo</div>
+    <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,overflow:"hidden"}}>
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 3fr",gap:0,borderBottom:`1px solid ${BORDER}`,padding:"8px 14px"}}>
+        {["Jogo","Gols mand.","Score","🎯","⚖️","📊","Breakdown"].map(h=>(
+          <div key={h} style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>{h}</div>
+        ))}
+      </div>
+      {rows.map(({g,hA,aA,realTotal,bet},idx)=>{
+        const sc=bet?.score??null;
+        const scColor=sc>=7?HIT_COLOR:sc>=5.5?YELLOW:sc>=4?TEXT2:MISS_COLOR;
+        const marcou=realTotal>0;
+        return(<div key={g.id} style={{borderBottom:idx<rows.length-1?`1px solid ${BORDER}`:"none"}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 3fr",gap:0,padding:"10px 14px",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{hA} vs {aA}</div>
+              <div style={{fontSize:10,color:TEXT3}}>{g.home.split(" ").slice(-1)[0]}</div>
+            </div>
+            <div>
+              <span style={{fontSize:14,fontWeight:700,color:marcou?HIT_COLOR:MISS_COLOR}}>{realTotal}</span>
+              <span style={{fontSize:10,color:TEXT3,marginLeft:4}}>{marcou?"marcou":"não marcou"}</span>
+            </div>
+            <div style={{fontSize:20,fontWeight:800,color:scColor}}>{sc??"-"}</div>
+            {profileKeys.map(([key])=>{
+              const rec=bet?.profiles?.[key];
+              const res=rec?(marcou?"hit":"miss"):null;
+              return(<div key={key}>
+                <RuleChip suggestion={rec?"APOSTAR":null} result={res}/>
+              </div>);
+            })}
+            {/* Breakdown resumido */}
+            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+              {bet?.breakdown?.filter(b=>b.pts!==0).map((b,i)=>(
+                <span key={i} style={{fontSize:9,
+                  color:b.pts>0?HIT_COLOR:MISS_COLOR,
+                  background:b.pts>0?"rgba(0,200,83,0.08)":"rgba(200,16,46,0.08)",
+                  border:`1px solid ${b.pts>0?"rgba(0,200,83,0.2)":"rgba(200,16,46,0.2)"}`,
+                  borderRadius:4,padding:"1px 5px"}}>
+                  {b.pts>0?"+":""}{b.pts} {b.label.split(" ").slice(0,2).join(" ")}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>);
+      })}
+    </div>
+
+    <div style={{marginTop:"1.25rem",fontSize:10,color:TEXT3}}>
+      Acerto = mandante marcou pelo menos 1 gol · Score baseado em força do sinal + consistência + convergência
+    </div>
+  </div>);
+}
+
+function RulesAnalysis({schedule,dates,savedOddsMap,sport}){
+  if(sport.id==="bra") return <RulesAnalysisSoccer schedule={schedule} dates={dates} savedOddsMap={savedOddsMap} sport={sport}/>;
+
+  // ── NBA rules analysis (código existente) ────────────────────
+
+  // ── NBA rules analysis ───────────────────────────────────────
+  const [rows,setRows]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const mountedRef=useRef(true);
+  const isBra=false; // NBA only beyond this point
   useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false;};},[]);
   useEffect(()=>{
     const finals=dates.flatMap(d=>(schedule[d]||[])).filter(g=>{
