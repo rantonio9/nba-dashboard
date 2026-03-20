@@ -1,5 +1,5 @@
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1";
-let cache = { data: null, ts: 0 };
+const cache = {};
 const CACHE_TTL = 30 * 60 * 1000;
 
 async function espnFetch(path) {
@@ -12,23 +12,31 @@ function getBrazilToday() {
   return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().split("T")[0];
 }
 
-function getLast7Dates(today) {
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today + "T12:00:00");
-    d.setDate(d.getDate() - (6 - i));
+function getLast14Dates() {
+  const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  return Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(brt); d.setDate(brt.getDate() - (6 - i));
+    return d.toISOString().split("T")[0];
+  });
+}
+
+function buildDates(startStr, endStr) {
+  const s = new Date(`${startStr.slice(0,4)}-${startStr.slice(4,6)}-${startStr.slice(6,8)}T12:00:00`);
+  const e = new Date(`${endStr.slice(0,4)}-${endStr.slice(4,6)}-${endStr.slice(6,8)}T12:00:00`);
+  const days = Math.round((e - s) / (1000*60*60*24)) + 1;
+  return Array.from({ length: days }, (_, i) => {
+    const d = new Date(s); d.setDate(s.getDate() + i);
     return d.toISOString().split("T")[0];
   });
 }
 
 function getGPJ(competitor) {
-  // Tenta avgGoals primeiro, depois avgGoalsScored, depois statistic genérica
   const names = ["avgGoals", "avgGoalsScored", "goalsPerGame"];
   for (const name of names) {
     const s = competitor?.statistics?.find(s => s.name === name);
     if (s) return parseFloat(s.displayValue);
   }
-  // Fallback: divide gols totais pelo número de jogos
-  const goals = competitor?.statistics?.find(s => s.name === "goals");
+  const goals  = competitor?.statistics?.find(s => s.name === "goals");
   const played = competitor?.statistics?.find(s => s.name === "gamesPlayed");
   if (goals && played && parseFloat(played.displayValue) > 0) {
     return parseFloat((parseFloat(goals.displayValue) / parseFloat(played.displayValue)).toFixed(2));
@@ -37,7 +45,6 @@ function getGPJ(competitor) {
 }
 
 function parseScore(competitor) {
-  // ESPN pode retornar score como objeto {value, displayValue} ou string direta
   const s = competitor?.score;
   if (s == null) return null;
   if (typeof s === "object") {
@@ -60,10 +67,7 @@ function parseGame(ev) {
   const overUnder = oddsObj?.overUnder ?? null;
   const spread    = oddsObj?.details   ?? null;
 
-  // Número da rodada
-  const round = ev.season?.slug
-    ? null
-    : (comp?.series?.summary ?? ev.week?.number ?? null);
+  const round = comp?.series?.summary ?? ev.week?.number ?? null;
 
   return {
     id:          ev.id,
@@ -79,8 +83,8 @@ function parseGame(ev) {
     away_ppg:    getGPJ(away),
     home_record: home?.records?.find(r => r.type === "total")?.summary || null,
     away_record: away?.records?.find(r => r.type === "total")?.summary || null,
-    hs:  isFinal || isLive ? parseScore(home) : null,
-    vs:  isFinal || isLive ? parseScore(away) : null,
+    hs:   isFinal || isLive ? parseScore(home) : null,
+    vs:   isFinal || isLive ? parseScore(away) : null,
     status: isFinal ? "Final"
           : stype === "STATUS_HALFTIME" ? "Intervalo"
           : isLive  ? ev.status?.type?.detail || "Em andamento"
@@ -105,7 +109,7 @@ export default async function handler(req, res) {
       return res.status(200).json(cache[cacheKey].data);
     }
 
-    const dates = buildDates(startStr, endStr);
+    const dates  = buildDates(startStr, endStr);
     const data   = await espnFetch(`/scoreboard?dates=${startStr}-${endStr}&limit=200`);
     const events = data.events || [];
 
@@ -131,38 +135,6 @@ export default async function handler(req, res) {
     if (fallback) {
       res.setHeader("X-Cache", "STALE");
       return res.status(200).json(fallback.data);
-    }
-    return res.status(500).json({ error: e.message });
-  }
-}
-
-    const data   = await espnFetch(`/scoreboard?dates=${start}-${end}&limit=100`);
-    const events = data.events || [];
-
-    const scheduleRaw = {};
-    dates.forEach(d => { scheduleRaw[d] = []; });
-
-    events.forEach(ev => {
-      const brt  = new Date(new Date(ev.date).getTime() - 3 * 60 * 60 * 1000);
-      const date = brt.toISOString().split("T")[0];
-      if (scheduleRaw[date] !== undefined) {
-        const game = parseGame(ev);
-        if (game.home) scheduleRaw[date].push(game);
-      }
-    });
-
-    const schedule = {};
-    dates.forEach(d => { schedule[d] = scheduleRaw[d]; });
-
-    const result = { schedule, updatedAt: new Date().toISOString() };
-    cache = { data: result, ts: Date.now() };
-    res.setHeader("X-Cache", "MISS");
-    res.setHeader("Cache-Control", "no-store");
-    return res.status(200).json(result);
-  } catch (e) {
-    if (cache.data) {
-      res.setHeader("X-Cache", "STALE");
-      return res.status(200).json(cache.data);
     }
     return res.status(500).json({ error: e.message });
   }
