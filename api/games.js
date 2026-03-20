@@ -1,5 +1,5 @@
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba";
-let cache = { data: null, ts: 0 };
+const cache = {};
 const CACHE_TTL = 30 * 60 * 1000;
 
 async function espnFetch(path) {
@@ -12,10 +12,20 @@ function getBrazilToday() {
   return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().split("T")[0];
 }
 
-function getLast7Dates(today) {
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today + "T12:00:00");
-    d.setDate(d.getDate() - (6 - i));
+function getLast14Dates() {
+  const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  return Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(brt); d.setDate(brt.getDate() - (6 - i));
+    return d.toISOString().split("T")[0];
+  });
+}
+
+function buildDates(startStr, endStr) {
+  const s = new Date(`${startStr.slice(0,4)}-${startStr.slice(4,6)}-${startStr.slice(6,8)}T12:00:00`);
+  const e = new Date(`${endStr.slice(0,4)}-${endStr.slice(4,6)}-${endStr.slice(6,8)}T12:00:00`);
+  const days = Math.round((e - s) / (1000*60*60*24)) + 1;
+  return Array.from({ length: days }, (_, i) => {
+    const d = new Date(s); d.setDate(s.getDate() + i);
     return d.toISOString().split("T")[0];
   });
 }
@@ -51,8 +61,8 @@ function parseGame(ev) {
     away_ppg:    getPPG(away),
     home_record: home?.records?.find(r => r.type === "total")?.summary || null,
     away_record: away?.records?.find(r => r.type === "total")?.summary || null,
-    hs:  isFinal || isLive ? parseInt(home?.score) || null : null,
-    vs:  isFinal || isLive ? parseInt(away?.score) || null : null,
+    hs:   isFinal || isLive ? parseInt(home?.score) || null : null,
+    vs:   isFinal || isLive ? parseInt(away?.score) || null : null,
     status: isFinal ? "Final"
           : isLive  ? ev.status?.type?.detail || "Em andamento"
           : "Agendado",
@@ -64,28 +74,19 @@ function parseGame(ev) {
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
 
-  if (cache.data && Date.now() - cache.ts < CACHE_TTL) {
-    res.setHeader("X-Cache", "HIT");
-    return res.status(200).json(cache.data);
-  }
-
   try {
-    const today = getBrazilToday();
-    const qStart = req.query.start;
-    const qEnd   = req.query.end;
+    const defaults  = getLast14Dates();
+    const startStr  = req.query.start || defaults[0].replace(/-/g, "");
+    const endStr    = req.query.end   || defaults[13].replace(/-/g, "");
+    const cacheKey  = `${startStr}-${endStr}`;
 
-    // Monta array de datas entre start e end (até 14 dias)
-    const startStr = qStart || getLast7Dates(today)[0].replace(/-/g,"");
-    const endStr   = qEnd   || getLast7Dates(today)[6].replace(/-/g,"");
-    const startDate = new Date(`${startStr.slice(0,4)}-${startStr.slice(4,6)}-${startStr.slice(6,8)}T12:00:00`);
-    const endDate   = new Date(`${endStr.slice(0,4)}-${endStr.slice(4,6)}-${endStr.slice(6,8)}T12:00:00`);
-    const diffDays  = Math.round((endDate-startDate)/(1000*60*60*24))+1;
-    const dates = Array.from({length:diffDays},(_,i)=>{
-      const d=new Date(startDate); d.setDate(startDate.getDate()+i);
-      return d.toISOString().split("T")[0];
-    });
+    if (cache[cacheKey] && Date.now() - cache[cacheKey].ts < CACHE_TTL) {
+      res.setHeader("X-Cache", "HIT");
+      return res.status(200).json(cache[cacheKey].data);
+    }
 
-    const data   = await espnFetch(`/scoreboard?dates=${start}-${end}&limit=100`);
+    const dates  = buildDates(startStr, endStr);
+    const data   = await espnFetch(`/scoreboard?dates=${startStr}-${endStr}&limit=200`);
     const events = data.events || [];
 
     const scheduleRaw = {};
@@ -100,18 +101,16 @@ export default async function handler(req, res) {
       }
     });
 
-    const schedule = {};
-    dates.forEach(d => { schedule[d] = scheduleRaw[d]; });
-
-    const result = { schedule, updatedAt: new Date().toISOString() };
-    cache = { data: result, ts: Date.now() };
+    const result = { schedule: scheduleRaw, updatedAt: new Date().toISOString() };
+    cache[cacheKey] = { data: result, ts: Date.now() };
     res.setHeader("X-Cache", "MISS");
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).json(result);
   } catch (e) {
-    if (cache.data) {
+    const fallback = Object.values(cache)[0];
+    if (fallback) {
       res.setHeader("X-Cache", "STALE");
-      return res.status(200).json(cache.data);
+      return res.status(200).json(fallback.data);
     }
     return res.status(500).json({ error: e.message });
   }
