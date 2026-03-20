@@ -804,7 +804,8 @@ function RulesAnalysis({schedule,weekDates,savedOddsMap,sport}){
 // ══════════════════════════════════════════════════════════════════
 // ── App ───────────────────────────────────────────────────────────
 function App(){
-  const weekDates=getLast7Dates();
+  const [window,setWindow]=useState("past"); // "past" | "next"
+  const weekDates = window==="past" ? getLast7Dates() : getNext7Dates();
   const todayStr=getBrazilToday();
   const [sportId,setSportId]=useState("nba");       // "nba" | "bra"
   const [activeTab,setActiveTab]=useState("jogos"); // "jogos" | "regras"
@@ -822,11 +823,14 @@ function App(){
   const updatedAt=updatedAts[sportId];
 
   // Carrega dados de um esporte
-  async function loadSport(sid){
+  async function loadSport(sid, win){
     setLoadings(p=>({...p,[sid]:true}));
     try{
+      const dates = win==="past" ? getLast7Dates() : getNext7Dates();
       const endpoint=sid==="bra"?"/api/games-soccer":"/api/games";
-      const r=await fetch(`${endpoint}?bust=${Date.now()}`);
+      const start=dates[0].replace(/-/g,"");
+      const end=dates[6].replace(/-/g,"");
+      const r=await fetch(`${endpoint}?bust=${Date.now()}&start=${start}&end=${end}`);
       const d=await r.json();
       if(d.schedule){
         setSchedules(p=>({...p,[sid]:d.schedule}));
@@ -844,10 +848,11 @@ function App(){
   }
 
   useEffect(()=>{
-    loadSport("nba");loadSport("bra");
-    const id=setInterval(()=>{loadSport("nba");loadSport("bra");},30*60*1000);
+    loadSport("nba", window);
+    loadSport("bra", window);
+    const id=setInterval(()=>{loadSport("nba",window);loadSport("bra",window);},30*60*1000);
     return()=>clearInterval(id);
-  },[]);
+  },[window]);
 
   const selGames=schedule[selDate]||[];
   const finals=selGames.filter(g=>g.status==="Final").length;
@@ -917,6 +922,23 @@ function App(){
       {activeTab==="jogos"&&(
         <div style={{background:SURFACE,borderBottom:`1px solid ${BORDER}`}}>
           <div style={{maxWidth:1800,margin:"0 auto",padding:"0 2rem"}}>
+            {/* Toggle últimos 7 / próximos 7 */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:8,paddingBottom:4}}>
+              <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em"}}>
+                {window==="past"?"Últimos 7 dias":"Próximos 7 dias"}
+              </div>
+              <div style={{display:"flex",border:`1px solid ${BORDER}`,borderRadius:6,overflow:"hidden"}}>
+                {[["past","← Passados"],["next","Futuros →"]].map(([w,label])=>(
+                  <button key={w} onClick={()=>{setWindow(w);setSelDate(w==="past"?todayStr:getNext7Dates()[0]);}}
+                    style={{padding:"4px 12px",fontSize:11,fontWeight:window===w?700:400,
+                      background:window===w?sport.primary:"transparent",
+                      color:window===w?"#fff":TEXT3,border:"none",cursor:"pointer",
+                      borderRight:w==="past"?`1px solid ${BORDER}`:"none"}}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
               {weekDates.map(d=>{
                 const isToday=d===todayStr,isSel=d===selDate;
