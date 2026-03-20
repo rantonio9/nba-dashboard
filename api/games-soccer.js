@@ -36,13 +36,25 @@ function getGPJ(competitor) {
   return null;
 }
 
+function parseScore(competitor) {
+  // ESPN pode retornar score como objeto {value, displayValue} ou string direta
+  const s = competitor?.score;
+  if (s == null) return null;
+  if (typeof s === "object") {
+    const v = s.value ?? parseInt(s.displayValue);
+    return isNaN(v) ? null : v;
+  }
+  const v = parseInt(s);
+  return isNaN(v) ? null : v;
+}
+
 function parseGame(ev) {
   const comp  = ev.competitions?.[0];
   const home  = comp?.competitors?.find(c => c.homeAway === "home");
   const away  = comp?.competitors?.find(c => c.homeAway === "away");
   const stype = ev.status?.type?.name;
-  const isFinal = stype === "STATUS_FINAL";
-  const isLive  = stype === "STATUS_IN_PROGRESS";
+  const isFinal = stype === "STATUS_FINAL" || stype === "STATUS_FULL_TIME";
+  const isLive  = stype === "STATUS_IN_PROGRESS" || stype === "STATUS_HALFTIME";
 
   const oddsObj   = comp?.odds?.[0];
   const overUnder = oddsObj?.overUnder ?? null;
@@ -67,9 +79,10 @@ function parseGame(ev) {
     away_ppg:    getGPJ(away),
     home_record: home?.records?.find(r => r.type === "total")?.summary || null,
     away_record: away?.records?.find(r => r.type === "total")?.summary || null,
-    hs:  isFinal || isLive ? parseInt(home?.score) || null : null,
-    vs:  isFinal || isLive ? parseInt(away?.score) || null : null,
+    hs:  isFinal || isLive ? parseScore(home) : null,
+    vs:  isFinal || isLive ? parseScore(away) : null,
     status: isFinal ? "Final"
+          : stype === "STATUS_HALFTIME" ? "Intervalo"
           : isLive  ? ev.status?.type?.detail || "Em andamento"
           : "Agendado",
     over_under: overUnder,
