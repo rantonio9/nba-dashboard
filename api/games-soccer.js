@@ -61,8 +61,10 @@ function parseGame(ev) {
     away_id:     away?.team?.id || null,
     home_abbr:   home?.team?.abbreviation || "",
     away_abbr:   away?.team?.abbreviation || "",
-    home_ppg:    getGPJ(home),   // gols por jogo (ataque)
-    away_ppg:    getGPJ(away),   // gols por jogo (ataque)
+    home_logo:   home?.team?.logo || null,
+    away_logo:   away?.team?.logo || null,
+    home_ppg:    getGPJ(home),
+    away_ppg:    getGPJ(away),
     home_record: home?.records?.find(r => r.type === "total")?.summary || null,
     away_record: away?.records?.find(r => r.type === "total")?.summary || null,
     hs:  isFinal || isLive ? parseInt(home?.score) || null : null,
