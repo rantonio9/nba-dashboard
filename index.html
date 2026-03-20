@@ -713,9 +713,18 @@ function App(){
 
     {/* Carrossel */}
     {activeTab==="jogos"&&(
-      <div style={{background:SURFACE,borderBottom:`1px solid ${BORDER}`}}>
-        <div className="carousel" ref={carouselRef}
-          style={{display:"flex",overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none",padding:"0 2rem"}}>
+      <div style={{background:SURFACE,borderBottom:`1px solid ${BORDER}`,display:"flex",alignItems:"stretch"}}>
+        {/* Seta esquerda — aparece se há dias antes do visível */}
+        {visibleDates[0]>minSelStr?(
+          <button onClick={()=>handleSelectDate(dateAdd(selDate,-1))} style={{
+            flexShrink:0,width:32,background:"transparent",border:"none",
+            borderBottom:`3px solid transparent`,borderRight:`1px solid ${BORDER}`,
+            color:TEXT3,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",
+          }}>‹</button>
+        ):<div style={{width:32,flexShrink:0,borderRight:`1px solid ${BORDER}`}}/>}
+
+        {/* Dias — flex:1 para preencher todo o espaço */}
+        <div style={{flex:1,display:"flex"}}>
           {visibleDates.map(d=>{
             const isToday=d===todayStr,isSel=d===selDate,isPast=d<todayStr;
             const games=schedule[d]||[];
@@ -726,7 +735,7 @@ function App(){
             const dOdds=games.filter(g=>g.status==="Final"&&!!getGameStats(g,savedOddsMap,sport).overUnder).length;
             return(
               <button key={d} data-today={isToday?"true":undefined} onClick={()=>handleSelectDate(d)} style={{
-                flexShrink:0,width:80,
+                flex:1,
                 background:isSel?sport.primary:"transparent",
                 color:isSel?"#fff":isToday?sport.primary:isPast?TEXT3:TEXT2,
                 border:"none",
@@ -743,6 +752,15 @@ function App(){
             );
           })}
         </div>
+
+        {/* Seta direita — aparece se há dias depois do visível */}
+        {visibleDates[visibleDates.length-1]<maxSelStr?(
+          <button onClick={()=>handleSelectDate(dateAdd(selDate,1))} style={{
+            flexShrink:0,width:32,background:"transparent",border:"none",
+            borderBottom:`3px solid transparent`,borderLeft:`1px solid ${BORDER}`,
+            color:TEXT3,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",
+          }}>›</button>
+        ):<div style={{width:32,flexShrink:0,borderLeft:`1px solid ${BORDER}`}}/>}
       </div>
     )}
 
