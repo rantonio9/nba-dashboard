@@ -42,15 +42,19 @@ const PPG_FB={
 function getBrazilToday(){return new Date(Date.now()-3*60*60*1000).toISOString().split("T")[0];}
 function getWeekDates(){
   const brt=new Date(Date.now()-3*60*60*1000);
-  const mon=new Date(brt);
-  mon.setDate(brt.getDate()-((brt.getDay()+6)%7));
-  return Array.from({length:7},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d.toISOString().split("T")[0];});
+  return Array.from({length:7},(_,i)=>{
+    const d=new Date(brt);
+    d.setDate(brt.getDate()-(6-i)); // hoje é o último dia, 6 dias atrás é o primeiro
+    return d.toISOString().split("T")[0];
+  });
 }
 
 async function saveOddsToKV(games){
   const toSave=games.filter(g=>g.status!=="Final"&&g.over_under).map(g=>({
     id:g.id,over_under:g.over_under,spread:g.spread||null,
     proj:(g.home_ppg||PPG_FB[g.home]||0)+(g.away_ppg||PPG_FB[g.away]||0),
+    home_ppg: g.home_ppg||PPG_FB[g.home]||null,  // salva PPG pré-jogo
+    away_ppg: g.away_ppg||PPG_FB[g.away]||null,  // salva PPG pré-jogo
   }));
   if(!toSave.length)return;
   try{await fetch("/api/save-odds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({games:toSave})});}
@@ -67,15 +71,19 @@ function calcResult(proj,overUnder,realTotal){
   return (proj>overUnder)===(realTotal>overUnder)?"hit":"miss";
 }
 function getGameStats(game,savedOddsMap){
-  const hPpg=game.home_ppg||PPG_FB[game.home]||0;
-  const aPpg=game.away_ppg||PPG_FB[game.away]||0;
   const saved=savedOddsMap?.[String(game.id)];
+  // Para jogos finalizados, usa PPG salvo antes do jogo (pré-jogo)
+  // Para jogos em andamento ou agendados, usa o PPG atual da ESPN
+  const isFinal=game.status==="Final";
+  // Usa sempre o PPG salvo pré-jogo se disponível (evita mostrar placar parcial durante o jogo)
+  const hPpg=saved?.home_ppg || game.home_ppg || PPG_FB[game.home] || 0;
+  const aPpg=saved?.away_ppg || game.away_ppg || PPG_FB[game.away] || 0;
   const overUnder=game.over_under||saved?.over_under||null;
   const spread=game.spread||saved?.spread||null;
-  const projDisplay=(game.status==="Final"&&saved?.proj)?saved.proj:(hPpg+aPpg);
+  const projDisplay=(isFinal&&saved?.proj)?saved.proj:(hPpg+aPpg);
   const avgDisplay=parseFloat((projDisplay/2).toFixed(1));
   const realTotal=(game.hs!=null&&game.vs!=null)?game.hs+game.vs:null;
-  const result=game.status==="Final"?calcResult(saved?.proj||(hPpg+aPpg),overUnder,realTotal):null;
+  const result=isFinal?calcResult(saved?.proj||(hPpg+aPpg),overUnder,realTotal):null;
   return{hPpg,aPpg,avg:avgDisplay,proj:projDisplay,realTotal,result,overUnder,spread};
 }
 
