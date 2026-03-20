@@ -20,11 +20,9 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
-// ── Constants ─────────────────────────────────────────────────────
 const BG="#0a0a0a", SURFACE="#111", SURFACE2="#1a1a1a", BORDER="#242424";
 const TEXT="#fff", TEXT2="#A0A0A0", TEXT3="#555";
-const GREEN="#00C853", HIT_COLOR="#00C853", MISS_COLOR="#C8102E";
-const YELLOW="#FFD600";
+const GREEN="#00C853", HIT_COLOR="#00C853", MISS_COLOR="#C8102E", YELLOW="#FFD600";
 const DAYS_PT=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const NBA_BLUE="#1D428A", NBA_RED="#C8102E";
 const BRA_GREEN="#006633", BRA_YELLOW="#FFCC00";
@@ -62,8 +60,6 @@ const GPJ_FB={
 function getBrazilToday(){
   return new Date(Date.now()-3*60*60*1000).toISOString().split("T")[0];
 }
-
-// 14 dias para carregar das APIs (hoje-6 até hoje+7)
 function getLoadDates(){
   const brt=new Date(Date.now()-3*60*60*1000);
   return Array.from({length:14},(_,i)=>{
@@ -71,25 +67,19 @@ function getLoadDates(){
     return d.toISOString().split("T")[0];
   });
 }
-
-// 8 dias visíveis no carrossel centrados no dia selecionado
-// Regras: min=hoje-6, max=hoje+7, mostra 6 atrás + sel + 1 à frente
-function getVisibleDates(selDate, todayStr){
+function getVisibleDates(selDate,todayStr){
   const today=new Date(todayStr+"T12:00:00");
   const sel=new Date(selDate+"T12:00:00");
   const minD=new Date(today); minD.setDate(today.getDate()-6);
   const maxD=new Date(today); maxD.setDate(today.getDate()+7);
-  // âncora = sel+1, limitado ao max
   const anchor=new Date(sel); anchor.setDate(sel.getDate()+1);
   const end=anchor>maxD?maxD:anchor;
-  // gera 8 dias terminando em end
   return Array.from({length:8},(_,i)=>{
     const d=new Date(end); d.setDate(end.getDate()-(7-i));
     return d.toISOString().split("T")[0];
   }).filter(d=>d>=minD.toISOString().split("T")[0]&&d<=maxD.toISOString().split("T")[0]);
 }
-
-function dateAdd(dateStr, days){
+function dateAdd(dateStr,days){
   const d=new Date(dateStr+"T12:00:00"); d.setDate(d.getDate()+days);
   return d.toISOString().split("T")[0];
 }
@@ -104,7 +94,7 @@ async function saveOddsToKV(games,sport){
   }));
   if(!toSave.length)return;
   try{await fetch("/api/save-odds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({games:toSave})});}
-  catch(e){console.error("save-odds failed:",e);}
+  catch(e){console.error("save-odds:",e);}
 }
 async function loadOddsFromKV(ids){
   if(!ids.length)return{};
@@ -112,14 +102,12 @@ async function loadOddsFromKV(ids){
   catch{return{};}
 }
 
-// ── Stats ─────────────────────────────────────────────────────────
+// ── Game stats ────────────────────────────────────────────────────
 function getFB(sport,name){return sport.id==="nba"?(PPG_FB[name]||0):(GPJ_FB[name]||1.3);}
-
 function calcResult(proj,ou,real){
   if(!ou||real==null)return null;
   return(proj>ou)===(real>ou)?"hit":"miss";
 }
-
 function getGameStats(game,savedOddsMap,sport){
   const isBra=sport.id==="bra";
   const saved=savedOddsMap?.[String(game.id)];
@@ -129,20 +117,15 @@ function getGameStats(game,savedOddsMap,sport){
   const ou=game.over_under||saved?.over_under||null;
   const spread=game.spread||saved?.spread||null;
   let proj,avg;
-  if(isBra){
-    proj=(isFinal&&saved?.proj)?saved.proj:parseFloat(((hPpg+aPpg)/2).toFixed(2));
-    avg=proj;
-  }else{
-    proj=(isFinal&&saved?.proj)?saved.proj:(hPpg+aPpg);
-    avg=parseFloat((proj/2).toFixed(1));
-  }
+  if(isBra){proj=(isFinal&&saved?.proj)?saved.proj:parseFloat(((hPpg+aPpg)/2).toFixed(2));avg=proj;}
+  else{proj=(isFinal&&saved?.proj)?saved.proj:(hPpg+aPpg);avg=parseFloat((proj/2).toFixed(1));}
   const real=(game.hs!=null&&game.vs!=null)?(isBra?game.hs:game.hs+game.vs):null;
   const validOU=ou&&(!isBra||ou<=3.5)?ou:null;
   const result=isFinal?calcResult(saved?.proj||proj,validOU,real):null;
   return{hPpg,aPpg,avg,proj,realTotal:real,result,overUnder:validOU,spread};
 }
 
-// ── Suggestions ───────────────────────────────────────────────────
+// ── NBA suggestion logic ──────────────────────────────────────────
 function fieldIsAbove(a,t){return t>0&&a*2>=t;}
 function countFields(h){
   if(!h)return{above:0,below:0,total:0};
@@ -177,7 +160,9 @@ async function fetchHist(hid,aid,avg,sport){
 function kFrac(p,o){const b=o-1,q=1-p;return(b*p-q)/b;}
 function eProb(acc,div){return Math.min(0.75,Math.min(0.75,Math.max(0.4,acc))+Math.min(0.10,(Math.abs(div)/5)*0.02));}
 
-// ── UI Components ─────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// ── Shared UI ─────────────────────────────────────────────────────
+
 function ScoreBar({above,total}){
   const pct=total>0?(above/total)*100:0,col=pct>=50?GREEN:MISS_COLOR;
   return(<div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -190,14 +175,73 @@ function ScoreBar({above,total}){
 
 function RuleChip({suggestion,result}){
   const skip=!suggestion||suggestion==="NÃO APOSTE";
-  const col=skip?TEXT3:suggestion==="OVER"?GREEN:"#6fa3ff";
-  const bg=skip?"rgba(80,80,80,0.15)":suggestion==="OVER"?"rgba(0,200,83,0.12)":"rgba(29,66,138,0.2)";
-  const bd=skip?"rgba(80,80,80,0.3)":suggestion==="OVER"?"rgba(0,200,83,0.3)":"rgba(29,66,138,0.5)";
+  const col=skip?TEXT3:suggestion==="OVER"||suggestion==="APOSTAR"?GREEN:"#6fa3ff";
+  const bg=skip?"rgba(80,80,80,0.15)":suggestion==="OVER"||suggestion==="APOSTAR"?"rgba(0,200,83,0.12)":"rgba(29,66,138,0.2)";
+  const bd=skip?"rgba(80,80,80,0.3)":suggestion==="OVER"||suggestion==="APOSTAR"?"rgba(0,200,83,0.3)":"rgba(29,66,138,0.5)";
   const ic=result==="hit"?" ✓":result==="miss"?" ✗":result==="skip"?" —":"";
   const icCol=result==="hit"?HIT_COLOR:result==="miss"?MISS_COLOR:TEXT3;
   return(<span style={{display:"inline-flex",alignItems:"center",gap:2,padding:"2px 8px",borderRadius:6,background:bg,border:`1px solid ${bd}`,fontSize:11,fontWeight:700,color:col}}>
     {skip?"N/A":suggestion}{ic&&<span style={{color:icCol}}>{ic}</span>}
   </span>);
+}
+
+// ── BetScorePanel (Brasileirão) ───────────────────────────────────
+function BetScorePanel({bet}){
+  if(!bet)return null;
+  const{score,breakdown,profiles}=bet;
+  const scColor=score>=7?HIT_COLOR:score>=5.5?YELLOW:score>=4?TEXT2:MISS_COLOR;
+  const activeProfile=profiles.precision?"Precisão":profiles.balanced?"Equilíbrio":profiles.volume?"Volume":null;
+  const profColor=profiles.precision?HIT_COLOR:profiles.balanced?YELLOW:profiles.volume?TEXT2:MISS_COLOR;
+  return(<div style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"1rem",marginTop:"1rem"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}}>
+      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em"}}>Score de aposta</div>
+      {activeProfile?(
+        <div style={{padding:"2px 10px",borderRadius:20,background:profColor+"22",border:`1px solid ${profColor}66`}}>
+          <span style={{fontSize:10,fontWeight:700,color:profColor}}>
+            {activeProfile==="Precisão"?"🎯":activeProfile==="Equilíbrio"?"⚖️":"📊"} Apostar ({activeProfile})
+          </span>
+        </div>
+      ):(
+        <div style={{padding:"2px 10px",borderRadius:20,background:"rgba(80,80,80,0.2)",border:`1px solid ${BORDER}`}}>
+          <span style={{fontSize:10,color:TEXT3}}>Não apostar</span>
+        </div>
+      )}
+    </div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:"0.75rem"}}>
+      <div style={{fontSize:40,fontWeight:800,color:scColor,lineHeight:1,minWidth:52}}>{score}</div>
+      <div style={{flex:1}}>
+        <div style={{height:8,background:SURFACE,borderRadius:4,overflow:"hidden",marginBottom:4}}>
+          <div style={{width:`${(score/10)*100}%`,height:"100%",background:scColor,borderRadius:4}}/>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:TEXT3}}>
+          <span>0</span><span style={{color:MISS_COLOR}}>4 vol.</span><span style={{color:TEXT2}}>5.5 eq.</span><span style={{color:HIT_COLOR}}>7 prec.</span><span>10</span>
+        </div>
+      </div>
+    </div>
+    <div style={{borderTop:`1px solid ${BORDER}`,paddingTop:"0.75rem",marginBottom:"0.75rem"}}>
+      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Detalhamento</div>
+      {breakdown.map((b,i)=>(
+        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 0",borderBottom:i<breakdown.length-1?`1px solid ${BORDER}22`:"none"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:10,color:b.ok?HIT_COLOR:b.pts<0?MISS_COLOR:TEXT3}}>{b.ok?"✓":b.pts<0?"✗":"○"}</span>
+            <span style={{fontSize:11,color:b.ok?TEXT:b.pts<0?MISS_COLOR:TEXT3}}>{b.label}</span>
+          </div>
+          <span style={{fontSize:11,fontWeight:700,color:b.pts>0?HIT_COLOR:b.pts<0?MISS_COLOR:TEXT3}}>{b.pts>0?"+":""}{b.pts}</span>
+        </div>
+      ))}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+      {[["🎯 Precisão",profiles.precision,7],["⚖️ Equilíbrio",profiles.balanced,5.5],["📊 Volume",profiles.volume,4]].map(([label,active,thr])=>(
+        <div key={label} style={{textAlign:"center",padding:"5px 4px",borderRadius:6,
+          background:active?"rgba(0,200,83,0.08)":"rgba(80,80,80,0.1)",
+          border:`1px solid ${active?"rgba(0,200,83,0.3)":BORDER}`}}>
+          <div style={{fontSize:10,color:active?HIT_COLOR:TEXT3}}>{label}</div>
+          <div style={{fontSize:9,color:TEXT3}}>≥{thr}pts</div>
+          <div style={{fontSize:11,fontWeight:700,color:active?HIT_COLOR:TEXT3}}>{active?"✓":"✗"}</div>
+        </div>
+      ))}
+    </div>
+  </div>);
 }
 
 function AccuracyReport({schedule,dates,selDate,savedOddsMap,sport}){
@@ -229,14 +273,13 @@ function OddsPanel({proj,overUnder,spread,result,realTotal,sport}){
   if(!overUnder)return null;
   const isBra=sport.id==="bra";
   const diff=proj-overUnder;
-  const thr=isBra?0.3:3;
-  const col=Math.abs(diff)>=thr?(diff>0?GREEN:MISS_COLOR):TEXT2;
+  const col=Math.abs(diff)>=(isBra?0.3:3)?(diff>0?GREEN:MISS_COLOR):TEXT2;
   return(<div style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"1rem",marginTop:"1rem"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}}>
       <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em"}}>Odds {isBra?"bet365":"DraftKings"}</div>
-      {result&&(<div style={{padding:"2px 10px",borderRadius:20,background:result==="hit"?"rgba(0,200,83,0.15)":"rgba(200,16,46,0.15)",border:`1px solid ${result==="hit"?"rgba(0,200,83,0.4)":"rgba(200,16,46,0.4)"}`}}>
+      {result&&<div style={{padding:"2px 10px",borderRadius:20,background:result==="hit"?"rgba(0,200,83,0.15)":"rgba(200,16,46,0.15)",border:`1px solid ${result==="hit"?"rgba(0,200,83,0.4)":"rgba(200,16,46,0.4)"}`}}>
         <span style={{fontSize:10,fontWeight:700,color:result==="hit"?HIT_COLOR:MISS_COLOR}}>{result==="hit"?"✓ Acerto":"✗ Erro"} · Real: {realTotal} {sport.divLabel}</span>
-      </div>)}
+      </div>}
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"0.75rem"}}>
       {[["Linha O/U",overUnder.toFixed(1)],[`Proj. ${sport.statLabel}`,proj.toFixed(isBra?2:1)],["Diferença",(diff>0?"+":"")+diff.toFixed(isBra?2:1)]].map(([l,v],i)=>(
@@ -254,81 +297,6 @@ function OddsPanel({proj,overUnder,spread,result,realTotal,sport}){
         <span style={{fontSize:11,color:TEXT2}}>{isBra?"Handicap":"Spread"}: {spread}</span>
       </div>}
     </div>)}
-  </div>);
-}
-
-// ── BetScorePanel — painel de score para futebol ─────────────────
-function BetScorePanel({bet}){
-  if(!bet) return null;
-  const {score,breakdown,profiles}=bet;
-  const scoreColor = score>=7?HIT_COLOR:score>=5.5?"#FFD600":score>=4?TEXT2:MISS_COLOR;
-  const activeProfile = profiles.precision?"Precisão":profiles.balanced?"Equilíbrio":profiles.volume?"Volume":null;
-  const profileColor  = profiles.precision?HIT_COLOR:profiles.balanced?"#FFD600":profiles.volume?TEXT2:MISS_COLOR;
-
-  return(<div style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"1rem",marginTop:"1rem"}}>
-    {/* Cabeçalho score */}
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}}>
-      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em"}}>Score de aposta</div>
-      <div style={{display:"flex",alignItems:"center",gap:8}}>
-        {activeProfile?(
-          <div style={{padding:"2px 10px",borderRadius:20,background:profileColor+"22",border:`1px solid ${profileColor}66`}}>
-            <span style={{fontSize:10,fontWeight:700,color:profileColor}}>
-              {activeProfile==="Precisão"?"🎯":activeProfile==="Equilíbrio"?"⚖️":"📊"} Apostar ({activeProfile})
-            </span>
-          </div>
-        ):(
-          <div style={{padding:"2px 10px",borderRadius:20,background:"rgba(80,80,80,0.2)",border:`1px solid ${BORDER}`}}>
-            <span style={{fontSize:10,color:TEXT3}}>Não apostar</span>
-          </div>
-        )}
-      </div>
-    </div>
-
-    {/* Score grande + barra */}
-    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:"0.75rem"}}>
-      <div style={{fontSize:40,fontWeight:800,color:scoreColor,lineHeight:1,minWidth:52}}>{score}</div>
-      <div style={{flex:1}}>
-        <div style={{height:8,background:SURFACE,borderRadius:4,overflow:"hidden",marginBottom:4}}>
-          <div style={{width:`${(score/10)*100}%`,height:"100%",background:scoreColor,borderRadius:4,transition:"width .3s"}}/>
-        </div>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:TEXT3}}>
-          <span>0</span>
-          <span style={{color:MISS_COLOR}}>4 volume</span>
-          <span style={{color:TEXT2}}>5.5 equil.</span>
-          <span style={{color:HIT_COLOR}}>7 precisão</span>
-          <span>10</span>
-        </div>
-      </div>
-    </div>
-
-    {/* Breakdown */}
-    <div style={{borderTop:`1px solid ${BORDER}`,paddingTop:"0.75rem"}}>
-      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Detalhamento</div>
-      {breakdown.map((b,i)=>(
-        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 0",borderBottom:i<breakdown.length-1?`1px solid ${BORDER}22`:"none"}}>
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <span style={{fontSize:10,color:b.ok?HIT_COLOR:b.pts<0?MISS_COLOR:TEXT3}}>{b.ok?"✓":b.pts<0?"✗":"○"}</span>
-            <span style={{fontSize:11,color:b.ok?TEXT:b.pts<0?MISS_COLOR:TEXT3}}>{b.label}</span>
-          </div>
-          <span style={{fontSize:11,fontWeight:700,color:b.pts>0?HIT_COLOR:b.pts<0?MISS_COLOR:TEXT3}}>
-            {b.pts>0?"+":""}{b.pts}
-          </span>
-        </div>
-      ))}
-    </div>
-
-    {/* Perfis */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:"0.75rem"}}>
-      {[["🎯 Precisão",profiles.precision,7],["⚖️ Equilíbrio",profiles.balanced,5.5],["📊 Volume",profiles.volume,4]].map(([label,active,thr])=>(
-        <div key={label} style={{textAlign:"center",padding:"5px 4px",borderRadius:6,
-          background:active?"rgba(0,200,83,0.08)":"rgba(80,80,80,0.1)",
-          border:`1px solid ${active?"rgba(0,200,83,0.3)":BORDER}`}}>
-          <div style={{fontSize:10,color:active?HIT_COLOR:TEXT3}}>{label}</div>
-          <div style={{fontSize:9,color:TEXT3}}>≥ {thr} pts</div>
-          <div style={{fontSize:11,fontWeight:700,color:active?HIT_COLOR:TEXT3}}>{active?"✓":"✗"}</div>
-        </div>
-      ))}
-    </div>
   </div>);
 }
 
@@ -357,15 +325,16 @@ function HistoryPanel({homeId,awayId,matchupAvg,homeAbbr,awayAbbr,sport,onLoaded
       <div key={label} style={{marginBottom:"0.85rem"}}>
         <div style={{fontSize:10,color:TEXT2,marginBottom:6,fontWeight:500}}>{label}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 36px 1fr",gap:8,alignItems:"center"}}>
-          <div><div style={{fontSize:11,color:TEXT3,marginBottom:4}}>{homeAbbr} {isBra?"(ataque)":""}</div><ScoreBar above={hA} total={hn}/></div>
+          <div><div style={{fontSize:11,color:TEXT3,marginBottom:4}}>{homeAbbr}{isBra?" (ataque)":""}</div><ScoreBar above={hA} total={hn}/></div>
           <div style={{textAlign:"center",fontSize:9,color:TEXT3}}>vs</div>
-          <div><div style={{fontSize:11,color:TEXT3,marginBottom:4}}>{awayAbbr} {isBra?"(defesa)":""}</div><ScoreBar above={aA} total={an}/></div>
+          <div><div style={{fontSize:11,color:TEXT3,marginBottom:4}}>{awayAbbr}{isBra?" (defesa)":""}</div><ScoreBar above={aA} total={an}/></div>
         </div>
       </div>
     ))}
-    {/* Score de aposta — só para futebol */}
     {isBra&&data?.bet&&<BetScorePanel bet={data.bet}/>}
-    {data&&<div style={{fontSize:9,color:TEXT3,marginTop:8}}>{isBra?"Ataque: gols marcados pelo mandante · Defesa: gols sofridos pelo visitante":"Dados reais ESPN"}</div>}
+    {data&&<div style={{fontSize:9,color:TEXT3,marginTop:8}}>
+      {isBra?"Ataque: gols marcados · Defesa: gols sofridos · zona neutra ±0.5":"Dados reais ESPN"}
+    </div>}
   </div>);
 }
 
@@ -428,7 +397,6 @@ function MatchupCard({game,savedOddsMap,onEdit,sport}){
         </button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:0,marginBottom:"1.25rem"}}>
-        {/* Home */}
         <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             <div style={{textAlign:"center"}}>
@@ -441,7 +409,6 @@ function MatchupCard({game,savedOddsMap,onEdit,sport}){
           </div>
           {(isFinal||isLive)&&<div style={{fontSize:30,fontWeight:800,color:hWin?TEXT:TEXT2,marginTop:6,lineHeight:1}}>{game.hs}</div>}
         </div>
-        {/* Center */}
         <div style={{textAlign:"center",padding:"0 8px"}}>
           <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{sport.avgLabel}</div>
           <div style={{fontSize:32,fontWeight:800,color:sport.primary,lineHeight:1}}>{isBra?proj.toFixed(2):avg.toFixed(1)}</div>
@@ -458,7 +425,6 @@ function MatchupCard({game,savedOddsMap,onEdit,sport}){
             <div style={{fontSize:14,fontWeight:700,color:result==="hit"?HIT_COLOR:result==="miss"?MISS_COLOR:TEXT}}>{realTotal}</div>
           </div>}
         </div>
-        {/* Away */}
         <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             {game.away_logo&&<img src={game.away_logo} alt={aAbbr} style={{width:78,height:78,objectFit:"contain",flexShrink:0,alignSelf:"flex-start"}} onError={e=>{e.target.style.display="none";}}/>}
@@ -568,129 +534,11 @@ function BettingSimulator({schedule,dates,savedOddsMap,selDate,sport}){
   </div>);
 }
 
-// ── RulesAnalysis — NBA + Brasileirão ────────────────────────────
-function RulesAnalysisSoccer({schedule,dates,savedOddsMap,sport}){
+// ── RulesAnalysis NBA ─────────────────────────────────────────────
+function RulesAnalysisNBA({schedule,dates,savedOddsMap,sport}){
   const [rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true);
   const mountedRef=useRef(true);
-  useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false;};},[]);
-  useEffect(()=>{
-    const finals=dates.flatMap(d=>(schedule[d]||[])).filter(g=>g.status==="Final");
-    if(!finals.length){setLoading(false);setRows([]);return;}
-    setLoading(true);
-    Promise.all(finals.map(async g=>{
-      const{avg,realTotal}=getGameStats(g,savedOddsMap,sport);
-      const hA=g.home_abbr||g.home.split(" ").pop();
-      const aA=g.away_abbr||g.away.split(" ").pop();
-      if(!g.home_id||!g.away_id||realTotal==null) return null;
-      try{
-        const r=await fetch(`/api/history-soccer?home_id=${g.home_id}&away_id=${g.away_id}&matchup_avg=${avg}`);
-        const d=await r.json();
-        return{g,hA,aA,realTotal,avg,bet:d.bet||null,home:d.home,away:d.away};
-      }catch{return null;}
-    })).then(res=>{
-      if(mountedRef.current){setRows(res.filter(Boolean));setLoading(false);}
-    });
-  },[schedule,dates]);
-
-  if(loading) return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Carregando análise...</div>;
-  if(!rows.length) return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Nenhum jogo finalizado disponível.</div>;
-
-  // Acertos por perfil: jogo "acertou" se o mandante marcou (realTotal > 0) e o perfil recomendou apostar
-  const profileKeys=[["precision","🎯 Precisão",7],["balanced","⚖️ Equilíbrio",5.5],["volume","📊 Volume",4]];
-  const pStats=profileKeys.map(([key,label,thr])=>{
-    const recommended=rows.filter(r=>r.bet?.profiles?.[key]);
-    const hits=recommended.filter(r=>r.realTotal>0); // mandante marcou
-    return{key,label,thr,rec:recommended.length,hits:hits.length,total:rows.length};
-  });
-
-  return(<div style={{padding:"1.5rem 2rem",maxWidth:1000,margin:"0 auto"}}>
-    <div style={{marginBottom:"1.5rem"}}>
-      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.15em",marginBottom:4}}>Análise comparativa — Brasileirão</div>
-      <div style={{fontSize:22,fontWeight:800,color:TEXT}}>Score de Aposta por Perfil</div>
-      <div style={{fontSize:12,color:TEXT2,marginTop:4}}>{rows.length} jogo(s) finalizado(s) · zona neutra ±0.5 gols</div>
-    </div>
-
-    {/* Cards de perfil */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:"2rem"}}>
-      {pStats.map(({key,label,thr,rec,hits,total})=>{
-        const pct=rec>0?Math.round((hits/rec)*100):0;
-        return(<div key={key} style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,padding:"1.25rem"}}>
-          <div style={{fontSize:14,marginBottom:6}}>{label}</div>
-          <div style={{fontSize:9,color:TEXT3,marginBottom:8}}>Score ≥ {thr} pts</div>
-          <div style={{fontSize:36,fontWeight:800,color:pct>=55?HIT_COLOR:pct>=45?YELLOW:MISS_COLOR,lineHeight:1,marginBottom:4}}>{pct}%</div>
-          <div style={{fontSize:13,color:TEXT2,marginBottom:8}}>{hits}/{rec} mandantes marcaram</div>
-          <div style={{height:5,background:SURFACE2,borderRadius:3,overflow:"hidden",marginBottom:8}}>
-            <div style={{width:`${pct}%`,height:"100%",background:pct>=55?HIT_COLOR:pct>=45?YELLOW:MISS_COLOR,borderRadius:3}}/>
-          </div>
-          <div style={{fontSize:10,color:TEXT3}}>{rec}/{total} jogos recomendados</div>
-        </div>);
-      })}
-    </div>
-
-    {/* Tabela jogo a jogo */}
-    <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Detalhe por jogo</div>
-    <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,overflow:"hidden"}}>
-      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 3fr",gap:0,borderBottom:`1px solid ${BORDER}`,padding:"8px 14px"}}>
-        {["Jogo","Gols mand.","Score","🎯","⚖️","📊","Breakdown"].map(h=>(
-          <div key={h} style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>{h}</div>
-        ))}
-      </div>
-      {rows.map(({g,hA,aA,realTotal,bet},idx)=>{
-        const sc=bet?.score??null;
-        const scColor=sc>=7?HIT_COLOR:sc>=5.5?YELLOW:sc>=4?TEXT2:MISS_COLOR;
-        const marcou=realTotal>0;
-        return(<div key={g.id} style={{borderBottom:idx<rows.length-1?`1px solid ${BORDER}`:"none"}}>
-          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 3fr",gap:0,padding:"10px 14px",alignItems:"center"}}>
-            <div>
-              <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{hA} vs {aA}</div>
-              <div style={{fontSize:10,color:TEXT3}}>{g.home.split(" ").slice(-1)[0]}</div>
-            </div>
-            <div>
-              <span style={{fontSize:14,fontWeight:700,color:marcou?HIT_COLOR:MISS_COLOR}}>{realTotal}</span>
-              <span style={{fontSize:10,color:TEXT3,marginLeft:4}}>{marcou?"marcou":"não marcou"}</span>
-            </div>
-            <div style={{fontSize:20,fontWeight:800,color:scColor}}>{sc??"-"}</div>
-            {profileKeys.map(([key])=>{
-              const rec=bet?.profiles?.[key];
-              const res=rec?(marcou?"hit":"miss"):null;
-              return(<div key={key}>
-                <RuleChip suggestion={rec?"APOSTAR":null} result={res}/>
-              </div>);
-            })}
-            {/* Breakdown resumido */}
-            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-              {bet?.breakdown?.filter(b=>b.pts!==0).map((b,i)=>(
-                <span key={i} style={{fontSize:9,
-                  color:b.pts>0?HIT_COLOR:MISS_COLOR,
-                  background:b.pts>0?"rgba(0,200,83,0.08)":"rgba(200,16,46,0.08)",
-                  border:`1px solid ${b.pts>0?"rgba(0,200,83,0.2)":"rgba(200,16,46,0.2)"}`,
-                  borderRadius:4,padding:"1px 5px"}}>
-                  {b.pts>0?"+":""}{b.pts} {b.label.split(" ").slice(0,2).join(" ")}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>);
-      })}
-    </div>
-
-    <div style={{marginTop:"1.25rem",fontSize:10,color:TEXT3}}>
-      Acerto = mandante marcou pelo menos 1 gol · Score baseado em força do sinal + consistência + convergência
-    </div>
-  </div>);
-}
-
-function RulesAnalysis({schedule,dates,savedOddsMap,sport}){
-  if(sport.id==="bra") return <RulesAnalysisSoccer schedule={schedule} dates={dates} savedOddsMap={savedOddsMap} sport={sport}/>;
-
-  // ── NBA rules analysis (código existente) ────────────────────
-
-  // ── NBA rules analysis ───────────────────────────────────────
-  const [rows,setRows]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const mountedRef=useRef(true);
-  const isBra=false; // NBA only beyond this point
   useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false;};},[]);
   useEffect(()=>{
     const finals=dates.flatMap(d=>(schedule[d]||[])).filter(g=>{
@@ -725,16 +573,16 @@ function RulesAnalysis({schedule,dates,savedOddsMap,sport}){
   const best=stats.map((s,i)=>({i:i+1,pct:pct(s[0],s[1])})).sort((a,b)=>b.pct-a.pct)[0]?.i;
   const sl=sport.statLabel;
   const LABELS=["Regra 1 — PPG vs Odd",`Regra 2 — ${sl} + Campos`,"Regra 3 — Só Campos","Regra 4 — Campos árbitro","Regra 5 — Convergência forte"];
-  const DESCS=[`Proj ${sl} > Odd → OVER`,`Mesma dir. ${sl}, ≥3/4 campos`,"≥3 campos acima/abaixo",`Campos conflitam → seguir campos`,`${sl}+campos mesma dir. E div≥${sport.minDiv}`];
+  const DESCS=[`Proj ${sl} > Odd → OVER`,`Mesma dir. ${sl}, ≥3/4 campos`,"≥3 campos acima/abaixo","Campos conflitam → seguir campos",`${sl}+campos mesma dir. E div≥${sport.minDiv}`];
 
   if(loading)return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Carregando análise...</div>;
   if(!rows.length)return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Nenhum jogo finalizado com odds disponíveis.</div>;
 
   return(<div style={{padding:"1.5rem 2rem",maxWidth:1000,margin:"0 auto"}}>
     <div style={{marginBottom:"1.5rem"}}>
-      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.15em",marginBottom:4}}>Análise comparativa</div>
+      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.15em",marginBottom:4}}>Análise comparativa — NBA</div>
       <div style={{fontSize:22,fontWeight:800,color:TEXT}}>Taxa de Acerto por Regra</div>
-      <div style={{fontSize:12,color:TEXT2,marginTop:4}}>{rows.length} jogo(s){isBra?` · zona neutra: ±${sport.neutralZone} gols`:""}</div>
+      <div style={{fontSize:12,color:TEXT2,marginTop:4}}>{rows.length} jogo(s) com odds</div>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:"2rem"}}>
       {stats.map(([h,t,sk],i)=>{
@@ -763,10 +611,7 @@ function RulesAnalysis({schedule,dates,savedOddsMap,sport}){
       {rows.map(({g,hA,aA,overUnder,realTotal,sg1,sg2,sg3,sg4,sg5,r1,r2,r3,r4,r5,fields},idx)=>(
         <div key={g.id} style={{borderBottom:idx<rows.length-1?`1px solid ${BORDER}`:"none"}}>
           <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 1fr 4fr",gap:0,padding:"10px 14px",alignItems:"center"}}>
-            <div>
-              <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{hA} vs {aA}</div>
-              <div style={{fontSize:10,color:TEXT3}}>{g.home.split(" ").slice(-1)[0]} vs {g.away.split(" ").slice(-1)[0]}</div>
-            </div>
+            <div><div style={{fontSize:13,fontWeight:700,color:TEXT}}>{hA} vs {aA}</div></div>
             <div style={{fontSize:14,fontWeight:700,color:TEXT}}>{realTotal}</div>
             <div style={{fontSize:13,color:TEXT2}}>{overUnder?.toFixed(1)}</div>
             <div><RuleChip suggestion={sg1} result={r1}/></div>
@@ -790,6 +635,112 @@ function RulesAnalysis({schedule,dates,savedOddsMap,sport}){
   </div>);
 }
 
+// ── RulesAnalysis Brasileirão ─────────────────────────────────────
+function RulesAnalysisSoccer({schedule,dates,savedOddsMap,sport}){
+  const [rows,setRows]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const mountedRef=useRef(true);
+  useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false;};},[]);
+  useEffect(()=>{
+    const finals=dates.flatMap(d=>(schedule[d]||[])).filter(g=>g.status==="Final");
+    if(!finals.length){setLoading(false);setRows([]);return;}
+    setLoading(true);
+    Promise.all(finals.map(async g=>{
+      const{avg,realTotal}=getGameStats(g,savedOddsMap,sport);
+      if(!g.home_id||!g.away_id||realTotal==null)return null;
+      const hA=g.home_abbr||g.home.split(" ").pop();
+      const aA=g.away_abbr||g.away.split(" ").pop();
+      try{
+        const r=await fetch(`/api/history-soccer?home_id=${g.home_id}&away_id=${g.away_id}&matchup_avg=${avg}`);
+        const d=await r.json();
+        return{g,hA,aA,realTotal,avg,bet:d.bet||null,home:d.home,away:d.away};
+      }catch{return null;}
+    })).then(res=>{if(mountedRef.current){setRows(res.filter(Boolean));setLoading(false);}});
+  },[schedule,dates]);
+
+  if(loading)return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Carregando análise...</div>;
+  if(!rows.length)return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Nenhum jogo finalizado disponível.</div>;
+
+  const profileKeys=[["precision","🎯 Precisão",7],["balanced","⚖️ Equilíbrio",5.5],["volume","📊 Volume",4]];
+  const pStats=profileKeys.map(([key,label,thr])=>{
+    const rec=rows.filter(r=>r.bet?.profiles?.[key]);
+    const hits=rec.filter(r=>r.realTotal>0);
+    return{key,label,thr,rec:rec.length,hits:hits.length,total:rows.length};
+  });
+
+  return(<div style={{padding:"1.5rem 2rem",maxWidth:1000,margin:"0 auto"}}>
+    <div style={{marginBottom:"1.5rem"}}>
+      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.15em",marginBottom:4}}>Análise comparativa — Brasileirão</div>
+      <div style={{fontSize:22,fontWeight:800,color:TEXT}}>Score de Aposta por Perfil</div>
+      <div style={{fontSize:12,color:TEXT2,marginTop:4}}>{rows.length} jogo(s) finalizado(s) · zona neutra ±0.5 gols</div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:"2rem"}}>
+      {pStats.map(({key,label,thr,rec,hits,total})=>{
+        const p=rec>0?Math.round((hits/rec)*100):0;
+        return(<div key={key} style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,padding:"1.25rem"}}>
+          <div style={{fontSize:14,marginBottom:6}}>{label}</div>
+          <div style={{fontSize:9,color:TEXT3,marginBottom:8}}>Score ≥ {thr} pts</div>
+          <div style={{fontSize:36,fontWeight:800,color:p>=55?HIT_COLOR:p>=45?YELLOW:MISS_COLOR,lineHeight:1,marginBottom:4}}>{p}%</div>
+          <div style={{fontSize:13,color:TEXT2,marginBottom:8}}>{hits}/{rec} mandantes marcaram</div>
+          <div style={{height:5,background:SURFACE2,borderRadius:3,overflow:"hidden",marginBottom:8}}>
+            <div style={{width:`${p}%`,height:"100%",background:p>=55?HIT_COLOR:p>=45?YELLOW:MISS_COLOR,borderRadius:3}}/>
+          </div>
+          <div style={{fontSize:10,color:TEXT3}}>{rec}/{total} jogos recomendados</div>
+        </div>);
+      })}
+    </div>
+    <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Detalhe por jogo</div>
+    <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,overflow:"hidden"}}>
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 3fr",gap:0,borderBottom:`1px solid ${BORDER}`,padding:"8px 14px"}}>
+        {["Jogo","Gols mand.","Score","🎯","⚖️","📊","Breakdown"].map(h=>(
+          <div key={h} style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>{h}</div>
+        ))}
+      </div>
+      {rows.map(({g,hA,aA,realTotal,bet},idx)=>{
+        const sc=bet?.score??null;
+        const scColor=sc>=7?HIT_COLOR:sc>=5.5?YELLOW:sc>=4?TEXT2:MISS_COLOR;
+        const marcou=realTotal>0;
+        return(<div key={g.id} style={{borderBottom:idx<rows.length-1?`1px solid ${BORDER}`:"none"}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 3fr",gap:0,padding:"10px 14px",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{hA} vs {aA}</div>
+              <div style={{fontSize:10,color:TEXT3}}>{g.home}</div>
+            </div>
+            <div>
+              <span style={{fontSize:14,fontWeight:700,color:marcou?HIT_COLOR:MISS_COLOR}}>{realTotal}</span>
+              <span style={{fontSize:10,color:TEXT3,marginLeft:4}}>{marcou?"✓":"✗"}</span>
+            </div>
+            <div style={{fontSize:20,fontWeight:800,color:scColor}}>{sc??"-"}</div>
+            {profileKeys.map(([key])=>{
+              const rec=bet?.profiles?.[key];
+              const res=rec?(marcou?"hit":"miss"):null;
+              return(<div key={key}><RuleChip suggestion={rec?"APOSTAR":null} result={res}/></div>);
+            })}
+            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+              {bet?.breakdown?.filter(b=>b.pts!==0).map((b,i)=>(
+                <span key={i} style={{fontSize:9,color:b.pts>0?HIT_COLOR:MISS_COLOR,
+                  background:b.pts>0?"rgba(0,200,83,0.08)":"rgba(200,16,46,0.08)",
+                  border:`1px solid ${b.pts>0?"rgba(0,200,83,0.2)":"rgba(200,16,46,0.2)"}`,
+                  borderRadius:4,padding:"1px 5px"}}>
+                  {b.pts>0?"+":""}{b.pts} {b.label.split(" ").slice(0,2).join(" ")}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>);
+      })}
+    </div>
+    <div style={{marginTop:"1.25rem",fontSize:10,color:TEXT3}}>
+      Acerto = mandante marcou ≥1 gol · Score: força do sinal + consistência recente + convergência
+    </div>
+  </div>);
+}
+
+function RulesAnalysis({schedule,dates,savedOddsMap,sport}){
+  if(sport.id==="bra") return <RulesAnalysisSoccer schedule={schedule} dates={dates} savedOddsMap={savedOddsMap} sport={sport}/>;
+  return <RulesAnalysisNBA schedule={schedule} dates={dates} savedOddsMap={savedOddsMap} sport={sport}/>;
+}
+
 // ══════════════════════════════════════════════════════════════════
 function App(){
   const todayStr=getBrazilToday();
@@ -809,11 +760,7 @@ function App(){
   const savedOddsMap=savedOddsMaps[sportId];
   const loading=loadings[sportId];
   const updatedAt=updatedAts[sportId];
-
-  // datas visíveis no carrossel (8 dias, centradas no selecionado)
   const visibleDates=getVisibleDates(selDate,todayStr);
-
-  // limites de seleção
   const minSelStr=dateAdd(todayStr,-6);
   const maxSelStr=dateAdd(todayStr,7);
 
@@ -836,10 +783,7 @@ function App(){
         const all=Object.values(d.schedule).flat();
         await saveOddsToKV(all,SPORTS[sid]);
         const fids=all.filter(g=>g.status==="Final"&&!g.over_under).map(g=>String(g.id));
-        if(fids.length){
-          const om=await loadOddsFromKV(fids);
-          setSavedOddsMaps(p=>({...p,[sid]:{...p[sid],...om}}));
-        }
+        if(fids.length){const om=await loadOddsFromKV(fids);setSavedOddsMaps(p=>({...p,[sid]:{...p[sid],...om}}));}
       }
     }catch(e){console.error(e);}
     finally{setLoadings(p=>({...p,[sid]:false}));}
@@ -909,17 +853,10 @@ function App(){
     {/* Carrossel */}
     {activeTab==="jogos"&&(
       <div style={{background:SURFACE,borderBottom:`1px solid ${BORDER}`,display:"flex",alignItems:"stretch"}}>
-        {/* Seta esquerda — aparece se há dias antes do visível */}
         {visibleDates[0]>minSelStr?(
-          <button onClick={()=>handleSelectDate(dateAdd(selDate,-1))} style={{
-            flexShrink:0,width:40,background:"transparent",border:"none",
-            borderBottom:`3px solid transparent`,borderRight:`1px solid ${BORDER}`,
-            color:TEXT2,cursor:"pointer",fontSize:32,display:"flex",alignItems:"center",justifyContent:"center",
-          }}>‹</button>
+          <button onClick={()=>handleSelectDate(dateAdd(selDate,-1))} style={{flexShrink:0,width:40,background:"transparent",border:"none",borderBottom:"3px solid transparent",borderRight:`1px solid ${BORDER}`,color:TEXT2,cursor:"pointer",fontSize:32,display:"flex",alignItems:"center",justifyContent:"center"}}>‹</button>
         ):<div style={{width:40,flexShrink:0,borderRight:`1px solid ${BORDER}`}}/>}
-
-        {/* Dias — flex:1 para preencher todo o espaço */}
-        <div style={{flex:1,display:"flex"}}>
+        <div ref={carouselRef} style={{flex:1,display:"flex"}}>
           {visibleDates.map(d=>{
             const isToday=d===todayStr,isSel=d===selDate,isPast=d<todayStr;
             const games=schedule[d]||[];
@@ -928,38 +865,26 @@ function App(){
             const dayNum=new Date(d+"T12:00:00").getDate();
             const dHits=games.filter(g=>g.status==="Final"&&getGameStats(g,savedOddsMap,sport).result==="hit").length;
             const dOdds=games.filter(g=>g.status==="Final"&&!!getGameStats(g,savedOddsMap,sport).overUnder).length;
-            return(
-              <button key={d} data-today={isToday?"true":undefined} onClick={()=>handleSelectDate(d)} style={{
-                flex:1,
-                background:isSel?sport.primary:"transparent",
-                color:isSel?"#fff":isToday?sport.primary:isPast?TEXT3:TEXT2,
-                border:"none",
-                borderBottom:isSel?`3px solid ${sport.secondary}`:isToday?`3px solid ${sport.primary}`:"3px solid transparent",
-                padding:"8px 4px 10px",cursor:"pointer",
-                display:"flex",flexDirection:"column",alignItems:"center",gap:2,
-                borderRadius:"4px 4px 0 0",
-              }}>
-                <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>{dayName}</span>
-                <span style={{fontSize:15,fontWeight:800}}>{dayNum}</span>
-                <span style={{fontSize:9,color:isSel?"rgba(255,255,255,0.6)":TEXT3}}>{tot>0?(fin>0?`${fin}/${tot}`:`${tot}j`):"—"}</span>
-                {dOdds>0&&<span style={{fontSize:8,color:isSel?"rgba(255,255,255,0.5)":dHits/dOdds>=0.5?"rgba(0,200,83,0.8)":"rgba(200,16,46,0.8)"}}>{dHits}/{dOdds}</span>}
-              </button>
-            );
+            return(<button key={d} data-today={isToday?"true":undefined} onClick={()=>handleSelectDate(d)} style={{
+              flex:1,background:isSel?sport.primary:"transparent",
+              color:isSel?"#fff":isToday?sport.primary:isPast?TEXT3:TEXT2,
+              border:"none",borderBottom:isSel?`3px solid ${sport.secondary}`:isToday?`3px solid ${sport.primary}`:"3px solid transparent",
+              padding:"8px 4px 10px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderRadius:"4px 4px 0 0",
+            }}>
+              <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>{dayName}</span>
+              <span style={{fontSize:15,fontWeight:800}}>{dayNum}</span>
+              <span style={{fontSize:9,color:isSel?"rgba(255,255,255,0.6)":TEXT3}}>{tot>0?(fin>0?`${fin}/${tot}`:`${tot}j`):"—"}</span>
+              {dOdds>0&&<span style={{fontSize:8,color:isSel?"rgba(255,255,255,0.5)":dHits/dOdds>=0.5?"rgba(0,200,83,0.8)":"rgba(200,16,46,0.8)"}}>{dHits}/{dOdds}</span>}
+            </button>);
           })}
         </div>
-
-        {/* Seta direita — aparece se há dias depois do visível */}
         {visibleDates[visibleDates.length-1]<maxSelStr?(
-          <button onClick={()=>handleSelectDate(dateAdd(selDate,1))} style={{
-            flexShrink:0,width:40,background:"transparent",border:"none",
-            borderBottom:`3px solid transparent`,borderLeft:`1px solid ${BORDER}`,
-            color:TEXT2,cursor:"pointer",fontSize:32,display:"flex",alignItems:"center",justifyContent:"center",
-          }}>›</button>
+          <button onClick={()=>handleSelectDate(dateAdd(selDate,1))} style={{flexShrink:0,width:40,background:"transparent",border:"none",borderBottom:"3px solid transparent",borderLeft:`1px solid ${BORDER}`,color:TEXT2,cursor:"pointer",fontSize:32,display:"flex",alignItems:"center",justifyContent:"center"}}>›</button>
         ):<div style={{width:40,flexShrink:0,borderLeft:`1px solid ${BORDER}`}}/>}
       </div>
     )}
 
-    {/* Tab: Jogos */}
+    {/* Tab Jogos */}
     {activeTab==="jogos"&&(
       <div style={{display:"grid",gridTemplateColumns:"1fr 460px",gap:0,alignItems:"start",width:"100%"}}>
         <div style={{maxWidth:760,margin:"0 auto",width:"100%",padding:"1.25rem 0 1.25rem 2rem"}}>
@@ -987,7 +912,7 @@ function App(){
       </div>
     )}
 
-    {/* Tab: Regras */}
+    {/* Tab Regras */}
     {activeTab==="regras"&&(
       <RulesAnalysis schedule={schedule} dates={loadDates} savedOddsMap={savedOddsMap} sport={sport}/>
     )}
