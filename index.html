@@ -9,6 +9,7 @@
 body{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 button{font-family:inherit}
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+.carousel::-webkit-scrollbar{display:none}
 </style>
 </head>
 <body>
@@ -19,63 +20,36 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
-// ── Shared ────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────
 const BG="#0a0a0a", SURFACE="#111", SURFACE2="#1a1a1a", BORDER="#242424";
 const TEXT="#fff", TEXT2="#A0A0A0", TEXT3="#555";
 const GREEN="#00C853", HIT_COLOR="#00C853", MISS_COLOR="#C8102E";
+const YELLOW="#FFD600";
 const DAYS_PT=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 
-// ── NBA brand ─────────────────────────────────────────────────────
-const NBA_BLUE="#1D428A", NBA_RED="#C8102E", NBA_WHITE="#fff";
+const NBA_BLUE="#1D428A", NBA_RED="#C8102E";
+const BRA_GREEN="#006633", BRA_YELLOW="#FFCC00", BRA_BLUE="#003082";
 
-// ── Brasileirão brand ─────────────────────────────────────────────
-const BRA_GREEN="#006633";   // verde escuro CBF
-const BRA_YELLOW="#FFCC00";  // amarelo ouro
-const BRA_BLUE="#003082";    // azul CBF
-const BRA_WHITE="#fff";
-
-// ── Sport config ──────────────────────────────────────────────────
 const SPORTS = {
   nba: {
-    id: "nba",
-    label: "NBA",
-    icon: "🏀",
-    espnSlug: "basketball/nba",
-    primary: NBA_BLUE,
-    secondary: NBA_RED,
-    accent: NBA_BLUE,
-    season: "2025-26",
-    statLabel: "PPG",       // pontos por jogo
-    metricLabel: "pts/time",
-    totalLabel: "total pts",
-    projLabel: "total proj.",
-    realLabel: "total real",
-    avgLabel: "média",
-    divLabel: "pts",
-    minDiv: 5,
+    id:"nba", label:"NBA", icon:"🏀",
+    primary:NBA_BLUE, secondary:NBA_RED,
+    season:"2025-26",
+    statLabel:"PPG", metricLabel:"pts/time",
+    projLabel:"total proj.", realLabel:"total real",
+    avgLabel:"média", divLabel:"pts", minDiv:5,
   },
   bra: {
-    id: "bra",
-    label: "Brasileirão",
-    icon: "⚽",
-    espnSlug: "soccer/bra.1",
-    primary: BRA_GREEN,
-    secondary: BRA_YELLOW,
-    accent: BRA_GREEN,
-    season: "Série A 2026",
-    statLabel: "GPJ",       // gols por jogo
-    metricLabel: "gols/time",
-    totalLabel: "total gols",
-    projLabel: "total proj.",
-    realLabel: "total real",
-    avgLabel: "média",
-    divLabel: "gols",
-    minDiv: 0.3,
-    neutralZone: 0.5,       // zona neutra ±0.5 gols
+    id:"bra", label:"Brasileirão", icon:"⚽",
+    primary:BRA_GREEN, secondary:BRA_YELLOW,
+    season:"Série A 2026",
+    statLabel:"GPJ", metricLabel:"gols/time",
+    projLabel:"gols proj.", realLabel:"gols mandante",
+    avgLabel:"gols proj.", divLabel:"gols", minDiv:0.3,
+    neutralZone:0.5,
   },
 };
 
-// ── PPG fallbacks NBA ─────────────────────────────────────────────
 const PPG_FB={
   "Detroit Pistons":117.2,"Boston Celtics":115.3,"New York Knicks":118.0,
   "Cleveland Cavaliers":120.0,"Toronto Raptors":113.8,"Philadelphia 76ers":116.2,
@@ -88,8 +62,6 @@ const PPG_FB={
   "Portland Trail Blazers":116.0,"Memphis Grizzlies":115.3,"Dallas Mavericks":114.1,
   "Utah Jazz":118.2,"New Orleans Pelicans":114.6,"Sacramento Kings":110.1,
 };
-
-// ── GPJ fallbacks Brasileirão (média gols marcados/jogo 2025) ────
 const GPJ_FB={
   "Flamengo":1.85,"Palmeiras":1.72,"Atletico Mineiro":1.68,"Fluminense":1.41,
   "Botafogo":1.63,"Corinthians":1.35,"São Paulo":1.52,"Internacional":1.48,
@@ -99,187 +71,145 @@ const GPJ_FB={
   "Santos":1.30,"Mirassol":1.20,"Remo":1.10,"Chapecoense":1.08,
 };
 
-// ── Helpers ───────────────────────────────────────────────────────
-function getBrazilToday(){return new Date(Date.now()-3*60*60*1000).toISOString().split("T")[0];}
-function getLast7Dates(){
+// ── Date helpers ──────────────────────────────────────────────────
+function getBrazilToday(){
+  return new Date(Date.now()-3*60*60*1000).toISOString().split("T")[0];
+}
+function getDateWindow(){
   const brt=new Date(Date.now()-3*60*60*1000);
-  return Array.from({length:7},(_,i)=>{
+  return Array.from({length:14},(_,i)=>{
     const d=new Date(brt); d.setDate(brt.getDate()-(6-i));
     return d.toISOString().split("T")[0];
   });
 }
 
-function getStatFallback(sport, teamName){
-  if(sport.id==="nba") return PPG_FB[teamName]||0;
-  return GPJ_FB[teamName]||1.3;
-}
-
+// ── KV helpers ────────────────────────────────────────────────────
 async function saveOddsToKV(games, sport){
-  const isBra = sport?.id === "bra";
-  const toSave = games.filter(g => g.status !== "Final" && g.over_under).map(g => ({
-    id: g.id,
-    over_under: g.over_under,
-    spread: g.spread || null,
-    // Futebol: proj = (ataque mandante + defesa visitante) / 2
-    // NBA:     proj = ataque mandante + ataque visitante
+  const isBra=sport?.id==="bra";
+  const toSave=games.filter(g=>g.status!=="Final"&&g.over_under).map(g=>({
+    id:g.id, over_under:g.over_under, spread:g.spread||null,
     proj: isBra
-      ? parseFloat(((g.home_ppg || 0) + (g.away_ppg || 0)) / 2)
-      : (g.home_ppg || 0) + (g.away_ppg || 0),
-    home_ppg: g.home_ppg || null,  // sempre ataque mandante
-    away_ppg: g.away_ppg || null,  // NBA: ataque visitante | Futebol: gols sofridos visitante
+      ? parseFloat(((g.home_ppg||0)+(g.away_ppg||0))/2)
+      : (g.home_ppg||0)+(g.away_ppg||0),
+    home_ppg:g.home_ppg||null,
+    away_ppg:g.away_ppg||null,
   }));
-  if (!toSave.length) return;
-  try {
-    await fetch("/api/save-odds", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ games: toSave }),
-    });
-  } catch(e) { console.error("save-odds failed:", e); }
+  if(!toSave.length) return;
+  try{
+    await fetch("/api/save-odds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({games:toSave})});
+  }catch(e){console.error("save-odds failed:",e);}
 }
 async function loadOddsFromKV(gameIds){
-  if(!gameIds.length)return{};
-  try{const r=await fetch(`/api/get-odds?ids=${gameIds.join(",")}`);const d=await r.json();return d.odds||{};}
-  catch{return{};}
+  if(!gameIds.length) return {};
+  try{
+    const r=await fetch(`/api/get-odds?ids=${gameIds.join(",")}`);
+    const d=await r.json(); return d.odds||{};
+  }catch{return {};}
 }
 
-// ── fieldIsAbove: maioria simples (above >= total/2) ──────────────
-function fieldIsAbove(above,total){return total>0&&above*2>=total;}
-
-// ── Brasileirão: classifica jogo pelo total com zona neutra ──────
-// Retorna "over"|"under"|"neutral"
-function braGameClass(totalGols, matchupAvg, zone=0.5){
-  if(totalGols>matchupAvg+zone) return "over";
-  if(totalGols<matchupAvg-zone) return "under";
-  return "neutral";
+// ── Stats ─────────────────────────────────────────────────────────
+function getFallback(sport, name){
+  return sport.id==="nba" ? (PPG_FB[name]||0) : (GPJ_FB[name]||1.3);
 }
 
-// ── getGameStats — adaptado por sport ────────────────────────────
+function calcResult(proj, ou, real){
+  if(!ou||real==null) return null;
+  return (proj>ou)===(real>ou) ? "hit" : "miss";
+}
+
 function getGameStats(game, savedOddsMap, sport){
-  const isBra = sport.id === "bra";
-  const fb  = getStatFallback(sport, game.home);
-  const fbA = getStatFallback(sport, game.away);
-  const saved = savedOddsMap?.[String(game.id)];
-  const isFinal = game.status === "Final";
-
-  // home_ppg: sempre ataque do mandante
-  const hPpg = saved?.home_ppg || game.home_ppg || fb;
-
-  // away_ppg:
-  //   NBA    → ataque do visitante (lógica original)
-  //   Futebol → gols SOFRIDOS pelo visitante (perspectiva defensiva)
-  //             salvo no KV como away_ppg pelo games-soccer.js
-  const aPpg = saved?.away_ppg || game.away_ppg || fbA;
-
-  const overUnder = game.over_under || saved?.over_under || null;
-  const spread    = game.spread     || saved?.spread     || null;
-
-  let projDisplay, avgDisplay;
-  if (isBra) {
-    // Projeção = média entre ataque mandante e defesa visitante
-    // Representa os gols esperados DO MANDANTE
-    const proj = (isFinal && saved?.proj)
-      ? saved.proj
-      : parseFloat(((hPpg + aPpg) / 2).toFixed(2));
-    projDisplay = proj;
-    avgDisplay  = proj; // avg e proj são o mesmo número no modelo por time
+  const isBra=sport.id==="bra";
+  const saved=savedOddsMap?.[String(game.id)];
+  const isFinal=game.status==="Final";
+  const hPpg=saved?.home_ppg||game.home_ppg||getFallback(sport,game.home);
+  const aPpg=saved?.away_ppg||game.away_ppg||getFallback(sport,game.away);
+  const overUnder=game.over_under||saved?.over_under||null;
+  const spread=game.spread||saved?.spread||null;
+  let proj, avg;
+  if(isBra){
+    proj=(isFinal&&saved?.proj)?saved.proj:parseFloat(((hPpg+aPpg)/2).toFixed(2));
+    avg=proj;
   } else {
-    // NBA: soma dos dois PPGs
-    projDisplay = (isFinal && saved?.proj) ? saved.proj : (hPpg + aPpg);
-    avgDisplay  = parseFloat((projDisplay / 2).toFixed(1));
+    proj=(isFinal&&saved?.proj)?saved.proj:(hPpg+aPpg);
+    avg=parseFloat((proj/2).toFixed(1));
   }
-
-  const realTotal = (game.hs != null && game.vs != null)
-    ? (isBra ? game.hs : game.hs + game.vs)  // futebol: gols do mandante; NBA: total
-    : null;
-
-  // Odd O/U válida para futebol só se <= 3.5 (linha de gols por time, não total)
-  const validOU = overUnder && (!isBra || overUnder <= 3.5) ? overUnder : null;
-
-  const result = isFinal
-    ? calcResult(saved?.proj || projDisplay, validOU, realTotal)
-    : null;
-
-  return { hPpg, aPpg, avg: avgDisplay, proj: projDisplay, realTotal, result, overUnder: validOU, spread };
+  const realTotal=(game.hs!=null&&game.vs!=null)?(isBra?game.hs:game.hs+game.vs):null;
+  const validOU=overUnder&&(!isBra||overUnder<=3.5)?overUnder:null;
+  const result=isFinal?calcResult(saved?.proj||proj,validOU,realTotal):null;
+  return{hPpg,aPpg,avg,proj,realTotal,result,overUnder:validOU,spread};
 }
 
-function calcResult(proj,overUnder,realTotal){
-  if(!overUnder||realTotal==null)return null;
-  return(proj>overUnder)===(realTotal>overUnder)?"hit":"miss";
-}
-
-// ── Sugestões (compartilhadas NBA + Brasileirão) ──────────────────
-function countFields(histData){
-  if(!histData)return{above:0,below:0,total:0};
+// ── Suggestion logic ──────────────────────────────────────────────
+function fieldIsAbove(above,total){return total>0&&above*2>=total;}
+function countFields(hist){
+  if(!hist) return{above:0,below:0,total:0};
   const fields=[
-    {above:histData.home.above,      total:histData.home.total},
-    {above:histData.home.last5.above,total:histData.home.last5.total},
-    {above:histData.away.above,      total:histData.away.total},
-    {above:histData.away.last5.above,total:histData.away.last5.total},
+    {above:hist.home.above,      total:hist.home.total},
+    {above:hist.home.last5.above,total:hist.home.last5.total},
+    {above:hist.away.above,      total:hist.away.total},
+    {above:hist.away.last5.above,total:hist.away.last5.total},
   ];
   let above=0,below=0,valid=0;
   for(const f of fields){
-    if(f.total===0)continue;
-    valid++;
-    if(fieldIsAbove(f.above,f.total))above++;else below++;
+    if(!f.total) continue; valid++;
+    if(fieldIsAbove(f.above,f.total)) above++; else below++;
   }
   return{above,below,total:valid};
 }
-function suggestion1(proj,ou){if(!ou)return null;return proj>ou?"OVER":proj<ou?"UNDER":null;}
-function suggestion2(proj,ou,hist){
-  const base=suggestion1(proj,ou);if(!base||!hist)return null;
-  const{above,below,total}=countFields(hist);if(total<3)return null;
-  if(base==="OVER"&&above>=3)return"OVER";if(base==="UNDER"&&below>=3)return"UNDER";
+function sug1(proj,ou){if(!ou)return null;return proj>ou?"OVER":proj<ou?"UNDER":null;}
+function sug2(proj,ou,hist){
+  const base=sug1(proj,ou); if(!base||!hist) return null;
+  const{above,below,total}=countFields(hist); if(total<3) return null;
+  if(base==="OVER"&&above>=3) return"OVER"; if(base==="UNDER"&&below>=3) return"UNDER";
   return"NÃO APOSTE";
 }
-function suggestion3(hist){
-  if(!hist)return null;const{above,below,total}=countFields(hist);if(total<3)return null;
-  if(above>=3)return"OVER";if(below>=3)return"UNDER";return"NÃO APOSTE";
+function sug3(hist){
+  if(!hist) return null;
+  const{above,below,total}=countFields(hist); if(total<3) return null;
+  if(above>=3) return"OVER"; if(below>=3) return"UNDER"; return"NÃO APOSTE";
 }
-function suggestion4(proj,ou,hist){
-  const base=suggestion1(proj,ou);if(!base)return null;if(!hist)return base;
-  const{above,below,total}=countFields(hist);if(total<3)return base;
+function sug4(proj,ou,hist){
+  const base=sug1(proj,ou); if(!base) return null; if(!hist) return base;
+  const{above,below,total}=countFields(hist); if(total<3) return base;
   const cd=above>=3?"OVER":below>=3?"UNDER":null;
-  if(!cd)return base;if(cd===base)return base;return cd;
+  if(!cd) return base; if(cd===base) return base; return cd;
 }
-function suggestion5(proj,ou,hist,minDiv){
-  const base=suggestion1(proj,ou);if(!base||!ou)return null;if(!hist)return null;
-  const{above,below,total}=countFields(hist);if(total<3)return null;
-  if(Math.abs(proj-ou)<minDiv)return"NÃO APOSTE";
+function sug5(proj,ou,hist,minDiv){
+  const base=sug1(proj,ou); if(!base||!ou||!hist) return null;
+  const{above,below,total}=countFields(hist); if(total<3) return null;
+  if(Math.abs(proj-ou)<minDiv) return"NÃO APOSTE";
   const cd=above>=3?"OVER":below>=3?"UNDER":null;
-  if(!cd||cd!==base)return"NÃO APOSTE";return base;
+  if(!cd||cd!==base) return"NÃO APOSTE"; return base;
 }
-function calcResultForSuggestion(s,ou,real){
-  if(!s||!ou||real==null)return null;if(s==="NÃO APOSTE")return"skip";
-  const realOver=real>ou;if(s==="OVER")return realOver?"hit":"miss";if(s==="UNDER")return!realOver?"hit":"miss";return null;
+function calcResSug(s,ou,real){
+  if(!s||!ou||real==null) return null;
+  if(s==="NÃO APOSTE") return"skip";
+  return s==="OVER"?(real>ou?"hit":"miss"):(real<=ou?"hit":"miss");
 }
 
 // ── Hist cache ────────────────────────────────────────────────────
 const histCache={};
 async function fetchHist(homeId,awayId,avg,sport){
-  // Para Brasileirão usa endpoint diferente (gols) para os últimos 5 e temporada
-  const endpoint = sport.id==="bra" ? "/api/history-soccer" : "/api/history";
+  const ep=sport.id==="bra"?"/api/history-soccer":"/api/history";
   const key=`${sport.id}_${homeId}_${awayId}_${avg}`;
-  if(histCache[key])return histCache[key];
+  if(histCache[key]) return histCache[key];
   try{
-    const r=await fetch(`${endpoint}?home_id=${homeId}&away_id=${awayId}&matchup_avg=${avg}`);
-    const d=await r.json();histCache[key]=d;return d;
+    const r=await fetch(`${ep}?home_id=${homeId}&away_id=${awayId}&matchup_avg=${avg}`);
+    const d=await r.json(); histCache[key]=d; return d;
   }catch{return null;}
 }
 
 // ── Kelly ─────────────────────────────────────────────────────────
-function kellyFraction(p,odds){const b=odds-1,q=1-p;return(b*p-q)/b;}
-function estimateProb(acc,div){
-  const base=Math.min(0.75,Math.max(0.4,acc));
-  const bonus=Math.min(0.10,(Math.abs(div)/5)*0.02);
-  return Math.min(0.75,base+bonus);
+function kellyFrac(p,odds){const b=odds-1,q=1-p;return(b*p-q)/b;}
+function estProb(acc,div){
+  return Math.min(0.75,Math.min(0.75,Math.max(0.4,acc))+Math.min(0.10,(Math.abs(div)/5)*0.02));
 }
 
 // ══════════════════════════════════════════════════════════════════
-// ── UI Components ─────────────────────────────────────────────────
+// ── Components ────────────────────────────────────────────────────
 
 function ScoreBar({above,total}){
-  const pct=total>0?(above/total)*100:0,col=pct>=50?GREEN:MISS_COLOR;
+  const pct=total>0?(above/total)*100:0, col=pct>=50?GREEN:MISS_COLOR;
   return(
     <div style={{display:"flex",alignItems:"center",gap:6}}>
       <div style={{flex:1,height:4,background:SURFACE2,borderRadius:2,overflow:"hidden"}}>
@@ -291,65 +221,55 @@ function ScoreBar({above,total}){
 }
 
 function RuleChip({suggestion,result}){
-  const isSkip=!suggestion||suggestion==="NÃO APOSTE";
-  const col=isSkip?TEXT3:suggestion==="OVER"?GREEN:"#6fa3ff";
-  const bg=isSkip?"rgba(80,80,80,0.15)":suggestion==="OVER"?"rgba(0,200,83,0.12)":"rgba(29,66,138,0.2)";
-  const bd=isSkip?"rgba(80,80,80,0.3)":suggestion==="OVER"?"rgba(0,200,83,0.3)":"rgba(29,66,138,0.5)";
-  const iconCol=result==="hit"?HIT_COLOR:result==="miss"?MISS_COLOR:TEXT3;
-  const icon=result==="hit"?" ✓":result==="miss"?" ✗":result==="skip"?" —":"";
+  const skip=!suggestion||suggestion==="NÃO APOSTE";
+  const col=skip?TEXT3:suggestion==="OVER"?GREEN:"#6fa3ff";
+  const bg=skip?"rgba(80,80,80,0.15)":suggestion==="OVER"?"rgba(0,200,83,0.12)":"rgba(29,66,138,0.2)";
+  const bd=skip?"rgba(80,80,80,0.3)":suggestion==="OVER"?"rgba(0,200,83,0.3)":"rgba(29,66,138,0.5)";
+  const ic=result==="hit"?" ✓":result==="miss"?" ✗":result==="skip"?" —":"";
+  const icCol=result==="hit"?HIT_COLOR:result==="miss"?MISS_COLOR:TEXT3;
   return(
     <span style={{display:"inline-flex",alignItems:"center",gap:2,padding:"2px 8px",borderRadius:6,background:bg,border:`1px solid ${bd}`,fontSize:11,fontWeight:700,color:col}}>
-      {isSkip?"N/A":suggestion}
-      {icon&&<span style={{color:iconCol,fontSize:11}}>{icon}</span>}
+      {skip?"N/A":suggestion}{ic&&<span style={{color:icCol}}>{ic}</span>}
     </span>
   );
 }
 
-// ── AccuracyReport ────────────────────────────────────────────────
-function AccuracyReport({schedule,weekDates,selDate,savedOddsMap,sport}){
-  const dayGames=(schedule[selDate]||[]).filter(g=>g.status==="Final");
-  const weekGames=weekDates.flatMap(d=>(schedule[d]||[]).filter(g=>g.status==="Final"));
-  const countHits=games=>{
-    const wo=games.filter(g=>!!getGameStats(g,savedOddsMap,sport).overUnder);
-    const h=wo.filter(g=>getGameStats(g,savedOddsMap,sport).result==="hit");
-    return{hits:h.length,total:wo.length};
+function AccuracyReport({schedule,dates,selDate,savedOddsMap,sport}){
+  const dayG=(schedule[selDate]||[]).filter(g=>g.status==="Final");
+  const weekG=dates.flatMap(d=>(schedule[d]||[]).filter(g=>g.status==="Final"));
+  const ch=gs=>{
+    const wo=gs.filter(g=>!!getGameStats(g,savedOddsMap,sport).overUnder);
+    return{hits:wo.filter(g=>getGameStats(g,savedOddsMap,sport).result==="hit").length,total:wo.length};
   };
-  const day=countHits(dayGames),week=countHits(weekGames);
-  if(day.total===0&&week.total===0)return null;
+  const day=ch(dayG), week=ch(weekG);
+  if(!day.total&&!week.total) return null;
   const pct=(h,t)=>t>0?Math.round((h/t)*100):0;
-  const accentColor=sport.primary;
   return(
     <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,padding:"1rem 1.25rem",marginBottom:"1.25rem",display:"flex",gap:"1.5rem",alignItems:"center"}}>
       <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",flexShrink:0}}>Precisão O/U</div>
-      {day.total>0&&(<div style={{display:"flex",alignItems:"center",gap:12}}>
-        <div>
-          <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>Hoje</div>
-          <div style={{fontSize:18,fontWeight:800,color:pct(day.hits,day.total)>=50?HIT_COLOR:MISS_COLOR}}>{day.hits}/{day.total}</div>
-          <div style={{fontSize:9,color:TEXT3}}>{pct(day.hits,day.total)}%</div>
-        </div>
-        <div style={{width:1,height:36,background:BORDER}}/>
-      </div>)}
-      {week.total>0&&(<div>
+      {day.total>0&&(<><div>
+        <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>Hoje</div>
+        <div style={{fontSize:18,fontWeight:800,color:pct(day.hits,day.total)>=50?HIT_COLOR:MISS_COLOR}}>{day.hits}/{day.total}</div>
+        <div style={{fontSize:9,color:TEXT3}}>{pct(day.hits,day.total)}%</div>
+      </div><div style={{width:1,height:36,background:BORDER}}/></>)}
+      {week.total>0&&(<><div>
         <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>Últimos 7 dias</div>
         <div style={{fontSize:18,fontWeight:800,color:pct(week.hits,week.total)>=50?HIT_COLOR:MISS_COLOR}}>{week.hits}/{week.total}</div>
         <div style={{fontSize:9,color:TEXT3}}>{pct(week.hits,week.total)}%</div>
-      </div>)}
-      {week.total>0&&(<div style={{flex:1,height:6,background:SURFACE2,borderRadius:3,overflow:"hidden",maxWidth:120}}>
+      </div>
+      <div style={{flex:1,height:6,background:SURFACE2,borderRadius:3,overflow:"hidden",maxWidth:120}}>
         <div style={{width:`${pct(week.hits,week.total)}%`,height:"100%",background:pct(week.hits,week.total)>=50?HIT_COLOR:MISS_COLOR,borderRadius:3}}/>
-      </div>)}
+      </div></>)}
     </div>
   );
 }
 
-// ── OddsPanel ─────────────────────────────────────────────────────
 function OddsPanel({proj,overUnder,spread,result,realTotal,sport}){
-  if(!overUnder)return null;
-  const diff=proj-overUnder;
+  if(!overUnder) return null;
   const isBra=sport.id==="bra";
-  const threshold=isBra?0.3:3;
-  const col=Math.abs(diff)>=threshold?(diff>0?GREEN:MISS_COLOR):TEXT2;
-  const diffStr=(diff>0?"+":"")+diff.toFixed(isBra?2:1);
-  const sugDir=diff>0?"OVER":"UNDER";
+  const diff=proj-overUnder;
+  const thr=isBra?0.3:3;
+  const col=Math.abs(diff)>=thr?(diff>0?GREEN:MISS_COLOR):TEXT2;
   return(
     <div style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"1rem",marginTop:"1rem"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}}>
@@ -365,7 +285,7 @@ function OddsPanel({proj,overUnder,spread,result,realTotal,sport}){
         )}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"0.75rem"}}>
-        {[["Linha O/U",overUnder.toFixed(isBra?1:1)],[`Proj. ${sport.statLabel}`,proj.toFixed(isBra?2:1)],["Diferença",diffStr]].map(([l,v],i)=>(
+        {[["Linha O/U",overUnder.toFixed(1)],[`Proj. ${sport.statLabel}`,proj.toFixed(isBra?2:1)],["Diferença",(diff>0?"+":"")+diff.toFixed(isBra?2:1)]].map(([l,v],i)=>(
           <div key={l} style={{textAlign:"center"}}>
             <div style={{fontSize:9,color:TEXT3,marginBottom:3}}>{l}</div>
             <div style={{fontSize:16,fontWeight:700,color:i===2?col:TEXT}}>{v}</div>
@@ -376,7 +296,7 @@ function OddsPanel({proj,overUnder,spread,result,realTotal,sport}){
         <div style={{display:"flex",justifyContent:"center",gap:8}}>
           <div style={{padding:"3px 12px",borderRadius:20,background:diff>0?"rgba(0,200,83,0.12)":"rgba(200,16,46,0.12)",border:`1px solid ${diff>0?"rgba(0,200,83,0.3)":"rgba(200,16,46,0.3)"}`}}>
             <span style={{fontSize:11,fontWeight:700,color:diff>0?GREEN:MISS_COLOR}}>
-              {sport.statLabel} sugere {sugDir} {overUnder.toFixed(1)}
+              {sport.statLabel} sugere {diff>0?"OVER":"UNDER"} {overUnder.toFixed(1)}
             </span>
           </div>
           {spread&&<div style={{padding:"3px 12px",borderRadius:20,background:SURFACE,border:`1px solid ${BORDER}`}}>
@@ -388,25 +308,22 @@ function OddsPanel({proj,overUnder,spread,result,realTotal,sport}){
   );
 }
 
-// ── HistoryPanel ─────────────────────────────────────────────────
-function HistoryPanel({homeId,awayId,matchupAvg,homeAbbr,awayAbbr,sport,onHistoryLoaded}){
+function HistoryPanel({homeId,awayId,matchupAvg,homeAbbr,awayAbbr,sport,onLoaded}){
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(false);
   const isBra=sport.id==="bra";
-  const endpoint=isBra?"/api/history-soccer":"/api/history";
   useEffect(()=>{
-    if(!homeId||!awayId)return;
+    if(!homeId||!awayId) return;
     setLoading(true);
-    fetch(`${endpoint}?home_id=${homeId}&away_id=${awayId}&matchup_avg=${matchupAvg}`)
-      .then(r=>r.json()).then(d=>{setData(d);setLoading(false);if(onHistoryLoaded)onHistoryLoaded(d);})
+    const ep=isBra?"/api/history-soccer":"/api/history";
+    fetch(`${ep}?home_id=${homeId}&away_id=${awayId}&matchup_avg=${matchupAvg}`)
+      .then(r=>r.json()).then(d=>{setData(d);setLoading(false);if(onLoaded)onLoaded(d);})
       .catch(()=>setLoading(false));
   },[homeId,awayId,matchupAvg]);
-  const label=isBra?"gols acima da média do confronto":"jogos acima da média do confronto";
-  const unit=isBra?"gl":"pts";
   return(
     <div style={{borderTop:`1px solid ${BORDER}`,paddingTop:"1.25rem",marginTop:"1rem"}}>
       <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:"1rem"}}>
-        {label} — {matchupAvg.toFixed(isBra?2:1)} {unit}
+        {isBra?"gols acima da média do confronto":"jogos acima da média do confronto"} — {matchupAvg.toFixed(isBra?2:1)} {isBra?"gl":"pts"}
       </div>
       {loading&&<div style={{fontSize:11,color:TEXT3}}>Carregando histórico...</div>}
       {!loading&&!data&&<div style={{fontSize:11,color:TEXT3}}>Histórico indisponível</div>}
@@ -429,21 +346,20 @@ function HistoryPanel({homeId,awayId,matchupAvg,homeAbbr,awayAbbr,sport,onHistor
   );
 }
 
-// ── EditModal ─────────────────────────────────────────────────────
 function EditModal({game,onSave,onClose,sport}){
   const [hs,setHs]=useState(game.hs??"");
   const [vs,setVs]=useState(game.vs??"");
-  const hAbbr=game.home_abbr||game.home.split(" ").pop();
-  const aAbbr=game.away_abbr||game.away.split(" ").pop();
+  const hA=game.home_abbr||game.home.split(" ").pop();
+  const aA=game.away_abbr||game.away.split(" ").pop();
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}>
       <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,padding:"1.5rem",width:300}}>
         <div style={{height:3,background:`linear-gradient(90deg,${sport.primary},${sport.secondary})`,borderRadius:2,marginBottom:"1.25rem"}}/>
         <div style={{fontSize:11,color:TEXT2,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:"1.25rem",textAlign:"center"}}>Inserir placar final</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 24px 1fr",alignItems:"center",gap:8,marginBottom:"1.5rem"}}>
-          {[["home",hAbbr,hs,setHs],["away",aAbbr,vs,setVs]].map(([side,label,val,set])=>(
+          {[["home",hA,hs,setHs],["away",aA,vs,setVs]].map(([side,label,val,set])=>(
             <div key={side} style={{textAlign:"center"}}>
-              <div style={{fontSize:11,color:TEXT2,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</div>
+              <div style={{fontSize:11,color:TEXT2,marginBottom:8,textTransform:"uppercase"}}>{label}</div>
               <input type="number" value={val} onChange={e=>set(e.target.value)}
                 style={{width:"100%",background:SURFACE2,color:TEXT,border:`1px solid ${BORDER}`,borderRadius:8,padding:"10px 8px",fontSize:22,fontWeight:700,textAlign:"center"}}/>
             </div>
@@ -462,11 +378,10 @@ function EditModal({game,onSave,onClose,sport}){
   );
 }
 
-// ── MatchupCard ───────────────────────────────────────────────────
 function MatchupCard({game,savedOddsMap,onEdit,sport}){
   const {hPpg,aPpg,avg,proj,realTotal,result,overUnder,spread}=getGameStats(game,savedOddsMap,sport);
   const [histData,setHistData]=useState(null);
-  if(!hPpg||!aPpg)return null;
+  if(!hPpg&&!aPpg) return null;
   const isBra=sport.id==="bra";
   const isFinal=game.status==="Final";
   const isLive=!isFinal&&game.status!=="Agendado";
@@ -474,33 +389,37 @@ function MatchupCard({game,savedOddsMap,onEdit,sport}){
   const aWin=isFinal&&game.vs>game.hs;
   const hAbbr=game.home_abbr||game.home.split(" ").pop();
   const aAbbr=game.away_abbr||game.away.split(" ").pop();
-  const accentColor=isFinal&&result==="hit"?HIT_COLOR:isFinal&&result==="miss"?MISS_COLOR:isLive?GREEN:null;
-  const cardBorder=accentColor?`1px solid ${accentColor}33`:`1px solid ${BORDER}`;
+  const dec=isBra?2:1;
   const topBar=isFinal&&result==="hit"?HIT_COLOR:isFinal&&result==="miss"?MISS_COLOR:isLive?GREEN:sport.primary+"44";
-  const statDecimals=isBra?2:1;
+  const cardBorder=isFinal&&result==="hit"?`1px solid ${HIT_COLOR}33`:isFinal&&result==="miss"?`1px solid ${MISS_COLOR}33`:`1px solid ${BORDER}`;
   return(
     <div style={{background:SURFACE,border:cardBorder,borderRadius:12,overflow:"hidden",marginBottom:"1rem"}}>
       <div style={{height:3,background:topBar}}/>
       <div style={{padding:"1.25rem"}}>
+        {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.25rem"}}>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             {isLive&&<span style={{width:7,height:7,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>}
-            <span style={{fontSize:10,fontWeight:600,color:isFinal&&result==="hit"?HIT_COLOR:isFinal&&result==="miss"?MISS_COLOR:isLive?GREEN:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em"}}>{game.status}{isBra&&game.round?` · Rod. ${game.round}`:""}</span>
+            <span style={{fontSize:10,fontWeight:600,color:isFinal&&result==="hit"?HIT_COLOR:isFinal&&result==="miss"?MISS_COLOR:isLive?GREEN:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em"}}>
+              {game.status}{isBra&&game.round?` · Rod. ${game.round}`:""}
+            </span>
           </div>
-          <button onClick={()=>onEdit(game)} style={{background:"transparent",color:isFinal?TEXT3:sport.primary,border:`1px solid ${isFinal?BORDER:sport.primary}`,borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:500,cursor:"pointer"}}>
+          <button onClick={()=>onEdit(game)} style={{background:"transparent",color:isFinal?TEXT3:sport.primary,border:`1px solid ${isFinal?BORDER:sport.primary}`,borderRadius:6,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>
             {isFinal?"✎ editar":"+ placar"}
           </button>
         </div>
+
+        {/* Teams row */}
         <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:0,marginBottom:"1.25rem"}}>
-          {/* Time mandante (esquerda) */}
+
+          {/* Home */}
           <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
               <div style={{textAlign:"center"}}>
                 <div style={{fontSize:28,fontWeight:800,color:hWin?TEXT:isFinal?TEXT2:TEXT,letterSpacing:"-0.5px",lineHeight:1}}>{hAbbr}</div>
                 <div style={{fontSize:10,color:TEXT2,marginTop:4}}>{game.home}</div>
-                <div style={{fontSize:12,color:TEXT3,marginTop:2}}>{hPpg.toFixed(statDecimals)} {isBra?"gl/j ataque":sport.statLabel}</div>
+                <div style={{fontSize:12,color:TEXT3,marginTop:2}}>{hPpg.toFixed(dec)} {isBra?"gl/j atq":sport.statLabel}</div>
                 {game.home_record&&<div style={{fontSize:10,color:TEXT3}}>{game.home_record}</div>}
-                {(isFinal||isLive)&&<div style={{fontSize:30,fontWeight:800,color:hWin?TEXT:TEXT2,marginTop:6,lineHeight:1}}>{game.hs}</div>}
               </div>
               {game.home_logo&&(
                 <img src={game.home_logo} alt={hAbbr}
@@ -508,43 +427,33 @@ function MatchupCard({game,savedOddsMap,onEdit,sport}){
                   onError={e=>{e.target.style.display="none";}}/>
               )}
             </div>
+            {(isFinal||isLive)&&<div style={{fontSize:30,fontWeight:800,color:hWin?TEXT:TEXT2,marginTop:6,lineHeight:1}}>{game.hs}</div>}
           </div>
 
-          {/* Centro */}
-          <div style={{textAlign:"center",padding:"0 4px"}}>
-            <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>
-              {isBra?"gols proj.":sport.avgLabel}
-            </div>
-            <div style={{fontSize:32,fontWeight:800,color:sport.primary,lineHeight:1}}>
-              {isBra?proj.toFixed(2):avg.toFixed(1)}
-            </div>
-            <div style={{fontSize:9,color:TEXT3,marginTop:6}}>
-              {isBra?"mandante":sport.metricLabel}
-            </div>
-            {isBra&&<div style={{fontSize:9,color:TEXT3,marginTop:2,lineHeight:1.4}}>
-              (atq.{hPpg.toFixed(1)} + def.{aPpg.toFixed(1)}) ÷ 2
-            </div>}
-            {!isBra&&<div style={{marginTop:8,padding:"4px 10px",background:SURFACE2,borderRadius:6,border:`1px solid ${BORDER}`}}>
-              <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>{sport.projLabel}</div>
-              <div style={{fontSize:14,fontWeight:700,color:TEXT}}>{proj.toFixed(0)}</div>
-            </div>}
+          {/* Center */}
+          <div style={{textAlign:"center",padding:"0 8px"}}>
+            <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{sport.avgLabel}</div>
+            <div style={{fontSize:32,fontWeight:800,color:sport.primary,lineHeight:1}}>{isBra?proj.toFixed(2):avg.toFixed(1)}</div>
+            <div style={{fontSize:9,color:TEXT3,marginTop:6}}>{isBra?"mandante":sport.metricLabel}</div>
+            {isBra&&<div style={{fontSize:9,color:TEXT3,marginTop:2}}>(atq.{hPpg.toFixed(1)}+def.{aPpg.toFixed(1)})÷2</div>}
+            {!isBra&&(
+              <div style={{marginTop:8,padding:"4px 10px",background:SURFACE2,borderRadius:6,border:`1px solid ${BORDER}`}}>
+                <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>{sport.projLabel}</div>
+                <div style={{fontSize:14,fontWeight:700,color:TEXT}}>{Math.round(proj)}</div>
+              </div>
+            )}
             {isFinal&&realTotal!=null&&(
               <div style={{marginTop:6,padding:"4px 10px",
-                background: result==="hit" ? "rgba(0,200,83,0.1)" : result==="miss" ? "rgba(200,16,46,0.1)" : SURFACE2,
+                background:result==="hit"?"rgba(0,200,83,0.1)":result==="miss"?"rgba(200,16,46,0.1)":SURFACE2,
                 borderRadius:6,
-                border:`1px solid ${result==="hit" ? "rgba(0,200,83,0.3)" : result==="miss" ? "rgba(200,16,46,0.3)" : BORDER}`
-              }}>
-                <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>
-                  {isBra?"gols mandante":"total real"}
-                </div>
-                <div style={{fontSize:14,fontWeight:700,color: result==="hit" ? HIT_COLOR : result==="miss" ? MISS_COLOR : TEXT}}>
-                  {realTotal}
-                </div>
+                border:`1px solid ${result==="hit"?"rgba(0,200,83,0.3)":result==="miss"?"rgba(200,16,46,0.3)":BORDER}`}}>
+                <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>{sport.realLabel}</div>
+                <div style={{fontSize:14,fontWeight:700,color:result==="hit"?HIT_COLOR:result==="miss"?MISS_COLOR:TEXT}}>{realTotal}</div>
               </div>
             )}
           </div>
 
-          {/* Time visitante (direita) */}
+          {/* Away */}
           <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
               {game.away_logo&&(
@@ -555,97 +464,95 @@ function MatchupCard({game,savedOddsMap,onEdit,sport}){
               <div style={{textAlign:"center"}}>
                 <div style={{fontSize:28,fontWeight:800,color:aWin?TEXT:isFinal?TEXT2:TEXT,letterSpacing:"-0.5px",lineHeight:1}}>{aAbbr}</div>
                 <div style={{fontSize:10,color:TEXT2,marginTop:4}}>{game.away}</div>
-                <div style={{fontSize:12,color:TEXT3,marginTop:2}}>{aPpg.toFixed(statDecimals)} {isBra?"gl/j sofridos":sport.statLabel}</div>
+                <div style={{fontSize:12,color:TEXT3,marginTop:2}}>{aPpg.toFixed(dec)} {isBra?"gl/j def":sport.statLabel}</div>
                 {game.away_record&&<div style={{fontSize:10,color:TEXT3}}>{game.away_record}</div>}
-                {(isFinal||isLive)&&<div style={{fontSize:30,fontWeight:800,color:aWin?TEXT:TEXT2,marginTop:6,lineHeight:1}}>{game.vs}</div>}
               </div>
             </div>
+            {(isFinal||isLive)&&<div style={{fontSize:30,fontWeight:800,color:aWin?TEXT:TEXT2,marginTop:6,lineHeight:1}}>{game.vs}</div>}
           </div>
         </div>
+
         <OddsPanel proj={proj} overUnder={overUnder} spread={spread} result={result} realTotal={realTotal} sport={sport}/>
         {game.home_id&&game.away_id&&(
           <HistoryPanel homeId={game.home_id} awayId={game.away_id} matchupAvg={avg}
-            homeAbbr={hAbbr} awayAbbr={aAbbr} sport={sport} onHistoryLoaded={setHistData}/>
+            homeAbbr={hAbbr} awayAbbr={aAbbr} sport={sport} onLoaded={setHistData}/>
         )}
       </div>
     </div>
   );
 }
 
-// ── BettingSimulator ──────────────────────────────────────────────
-function BettingSimulator({schedule,weekDates,savedOddsMap,selDate,sport}){
+function BettingSimulator({schedule,dates,savedOddsMap,selDate,sport}){
+  const isBra=sport.id==="bra";
   const [banca,setBanca]=useState(1000);
-  const defaultMinDiv=sport.id==="bra"?0.3:5;
-  const [minDiv,setMinDiv]=useState(defaultMinDiv);
+  const [minDiv,setMinDiv]=useState(sport.minDiv);
   const [kFrac,setKFrac]=useState(0.5);
   const [maxPct,setMaxPct]=useState(5);
-  const isBra=sport.id==="bra";
-  const weekGames=weekDates.flatMap(d=>(schedule[d]||[]).filter(g=>g.status==="Final"));
-  const withOdds=weekGames.filter(g=>!!getGameStats(g,savedOddsMap,sport).overUnder);
+  const weekG=dates.flatMap(d=>(schedule[d]||[]).filter(g=>g.status==="Final"));
+  const withOdds=weekG.filter(g=>!!getGameStats(g,savedOddsMap,sport).overUnder);
   const hits=withOdds.filter(g=>getGameStats(g,savedOddsMap,sport).result==="hit");
   const histAcc=withOdds.length>0?hits.length/withOdds.length:0.55;
-  const todayGames=(schedule[selDate]||[]).filter(g=>g.status!=="Final"&&!!getGameStats(g,savedOddsMap,sport).overUnder);
-  const allocations=todayGames.map(g=>{
+  const todayG=(schedule[selDate]||[]).filter(g=>g.status!=="Final"&&!!getGameStats(g,savedOddsMap,sport).overUnder);
+  const allocs=todayG.map(g=>{
     const{proj,overUnder}=getGameStats(g,savedOddsMap,sport);
-    const div=proj-overUnder;const absDiv=Math.abs(div);
-    if(absDiv<minDiv)return{game:g,reason:"divergência insuficiente",alloc:0};
-    const p=estimateProb(histAcc,div);const odds=1.91;const kf=kellyFraction(p,odds);
-    if(kf<=0)return{game:g,reason:"edge negativo",alloc:0};
-    const rawPct=kf*kFrac*100;const cappedPct=Math.min(maxPct,rawPct);
+    const div=proj-overUnder; const absDiv=Math.abs(div);
+    if(absDiv<minDiv) return{game:g,reason:"divergência insuficiente",alloc:0};
+    const p=estProb(histAcc,div); const odds=1.91; const kf=kellyFrac(p,odds);
+    if(kf<=0) return{game:g,reason:"edge negativo",alloc:0};
+    const cappedPct=Math.min(maxPct,kf*kFrac*100);
     const alloc=parseFloat(((cappedPct/100)*banca).toFixed(2));
-    const side=div>0?"OVER":"UNDER";const retorno=parseFloat((alloc*(odds-1)).toFixed(2));
-    return{game:g,div,absDiv,p,kf,rawPct,cappedPct,alloc,side,retorno,overUnder,reason:null};
+    const retorno=parseFloat((alloc*(odds-1)).toFixed(2));
+    return{game:g,div,p,cappedPct,alloc,side:div>0?"OVER":"UNDER",retorno,overUnder,reason:null};
   });
-  const eligible=allocations.filter(a=>a.alloc>0);
-  const excluded=allocations.filter(a=>a.alloc===0);
-  const totalAlloc=eligible.reduce((s,a)=>s+a.alloc,0);
-  const totalRet=eligible.reduce((s,a)=>s+a.retorno,0);
-  const pctBanca=parseFloat(((totalAlloc/banca)*100).toFixed(1));
-  const divStep=isBra?0.1:1;const divMax=isBra?3:20;
+  const elig=allocs.filter(a=>a.alloc>0);
+  const excl=allocs.filter(a=>a.alloc===0);
+  const totalA=elig.reduce((s,a)=>s+a.alloc,0);
+  const totalR=elig.reduce((s,a)=>s+a.retorno,0);
+  const divStep=isBra?0.1:1; const divMax=isBra?3:20;
   return(
     <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,padding:"1.25rem",marginBottom:"1.25rem"}}>
       <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:"1rem"}}>Simulador — Kelly</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:"1.25rem"}}>
-        {[["Banca (R$)",banca,setBanca,50,100000,50],[`Div. mínima (${sport.divLabel})`,minDiv,setMinDiv,divStep,divMax,divStep],["Nível de risco",kFrac,setKFrac,0.1,1,0.05],["Teto por jogo (%)",maxPct,setMaxPct,1,20,1]].map(([label,val,setter,min,max,step])=>(
-          <div key={label}>
-            <div style={{fontSize:9,color:TEXT3,marginBottom:4}}>{label}</div>
+        {[["Banca (R$)",banca,setBanca,50,100000,50],[`Div. mín. (${sport.divLabel})`,minDiv,setMinDiv,divStep,divMax,divStep],["Nível de risco",kFrac,setKFrac,0.1,1,0.05],["Teto/jogo (%)",maxPct,setMaxPct,1,20,1]].map(([l,v,s,mn,mx,st])=>(
+          <div key={l}>
+            <div style={{fontSize:9,color:TEXT3,marginBottom:4}}>{l}</div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <input type="range" min={min} max={max} step={step} value={val} onChange={e=>setter(Number(e.target.value))} style={{flex:1}}/>
-              <span style={{fontSize:13,fontWeight:700,color:TEXT,minWidth:40,textAlign:"right"}}>{val}</span>
+              <input type="range" min={mn} max={mx} step={st} value={v} onChange={e=>s(Number(e.target.value))} style={{flex:1}}/>
+              <span style={{fontSize:13,fontWeight:700,color:TEXT,minWidth:40,textAlign:"right"}}>{v}</span>
             </div>
           </div>
         ))}
       </div>
-      <div style={{background:SURFACE2,borderRadius:8,padding:"8px 12px",marginBottom:"1rem",display:"flex",alignItems:"center",gap:12}}>
-        <div>
-          <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>Acurácia (7 dias)</div>
-          <div style={{fontSize:16,fontWeight:800,color:histAcc>=0.5?HIT_COLOR:MISS_COLOR}}>{hits.length}/{withOdds.length} — {Math.round(histAcc*100)}%</div>
-        </div>
+      <div style={{background:SURFACE2,borderRadius:8,padding:"8px 12px",marginBottom:"1rem"}}>
+        <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>Acurácia (7 dias)</div>
+        <div style={{fontSize:16,fontWeight:800,color:histAcc>=0.5?HIT_COLOR:MISS_COLOR}}>{hits.length}/{withOdds.length} — {Math.round(histAcc*100)}%</div>
       </div>
-      {todayGames.length===0&&<div style={{textAlign:"center",padding:"1.5rem 0",color:TEXT3,fontSize:12}}>Nenhum jogo com odds disponíveis.</div>}
-      {eligible.length>0&&(<>
-        <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Selecionados ({eligible.length})</div>
-        {eligible.map(a=>{
+      {!todayG.length&&<div style={{textAlign:"center",padding:"1.5rem 0",color:TEXT3,fontSize:12}}>Nenhum jogo com odds disponíveis.</div>}
+      {elig.length>0&&(<>
+        <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Selecionados ({elig.length})</div>
+        {elig.map(a=>{
           const hA=a.game.home_abbr||a.game.home.split(" ").pop();
           const aA=a.game.away_abbr||a.game.away.split(" ").pop();
-          return(<div key={a.game.id} style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-              <div style={{flex:1}}>
-                <div style={{fontSize:14,fontWeight:700,color:TEXT,marginBottom:4}}>{hA} vs {aA}</div>
-                <div style={{fontSize:11,color:TEXT2}}>Apostar: <span style={{color:a.side==="OVER"?HIT_COLOR:"#6fa3ff",fontWeight:700}}>{a.side} {a.overUnder}</span></div>
-                <div style={{fontSize:11,color:TEXT2}}>Diverg.: <span style={{color:TEXT}}>{a.div>0?"+":""}{a.div.toFixed(isBra?2:1)} {sport.divLabel}</span></div>
-              </div>
-              <div style={{textAlign:"right",flexShrink:0,marginLeft:12}}>
-                <div style={{fontSize:18,fontWeight:800,color:HIT_COLOR}}>R$ {a.alloc.toFixed(2)}</div>
-                <div style={{fontSize:10,color:TEXT3}}>{a.cappedPct.toFixed(1)}% da banca</div>
-                <div style={{fontSize:10,color:TEXT3}}>ret.: R$ {a.retorno.toFixed(2)}</div>
+          return(
+            <div key={a.game.id} style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:700,color:TEXT,marginBottom:4}}>{hA} vs {aA}</div>
+                  <div style={{fontSize:11,color:TEXT2}}>Apostar: <span style={{color:a.side==="OVER"?HIT_COLOR:"#6fa3ff",fontWeight:700}}>{a.side} {a.overUnder}</span></div>
+                  <div style={{fontSize:11,color:TEXT2}}>Diverg.: <span style={{color:TEXT}}>{a.div>0?"+":""}{a.div.toFixed(isBra?2:1)} {sport.divLabel}</span></div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:18,fontWeight:800,color:HIT_COLOR}}>R$ {a.alloc.toFixed(2)}</div>
+                  <div style={{fontSize:10,color:TEXT3}}>{a.cappedPct.toFixed(1)}% da banca</div>
+                  <div style={{fontSize:10,color:TEXT3}}>ret.: R$ {a.retorno.toFixed(2)}</div>
+                </div>
               </div>
             </div>
-          </div>);
+          );
         })}
-        <div style={{background:SURFACE2,borderRadius:10,padding:"10px 12px",border:`1px solid ${BORDER}`,marginTop:4}}>
+        <div style={{background:SURFACE2,borderRadius:10,padding:"10px 12px",border:`1px solid ${BORDER}`}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            {[["Total alocado",`R$ ${totalAlloc.toFixed(2)}`],["% da banca",`${pctBanca}%`],["Ret. potencial",`R$ ${totalRet.toFixed(2)}`]].map(([l,v])=>(
+            {[["Total alocado",`R$ ${totalA.toFixed(2)}`],["% da banca",`${((totalA/banca)*100).toFixed(1)}%`],["Ret. potencial",`R$ ${totalR.toFixed(2)}`]].map(([l,v])=>(
               <div key={l} style={{textAlign:"center"}}>
                 <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>{l}</div>
                 <div style={{fontSize:14,fontWeight:700,color:TEXT}}>{v}</div>
@@ -654,102 +561,101 @@ function BettingSimulator({schedule,weekDates,savedOddsMap,selDate,sport}){
           </div>
         </div>
       </>)}
-      {excluded.length>0&&(<div style={{marginTop:"1rem"}}>
-        <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>Excluídos ({excluded.length})</div>
-        {excluded.map(a=>{
-          const hA=a.game.home_abbr||a.game.home.split(" ").pop();
-          const aA=a.game.away_abbr||a.game.away.split(" ").pop();
-          return(<div key={a.game.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",borderRadius:8,background:SURFACE2,marginBottom:4,opacity:0.5}}>
-            <span style={{fontSize:11,color:TEXT2}}>{hA} vs {aA}</span>
-            <span style={{fontSize:10,color:TEXT3}}>{a.reason}</span>
-          </div>);
-        })}
-      </div>)}
+      {excl.length>0&&(
+        <div style={{marginTop:"1rem"}}>
+          <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>Excluídos ({excl.length})</div>
+          {excl.map(a=>{
+            const hA=a.game.home_abbr||a.game.home.split(" ").pop();
+            const aA=a.game.away_abbr||a.game.away.split(" ").pop();
+            return(
+              <div key={a.game.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 10px",borderRadius:8,background:SURFACE2,marginBottom:4,opacity:0.5}}>
+                <span style={{fontSize:11,color:TEXT2}}>{hA} vs {aA}</span>
+                <span style={{fontSize:10,color:TEXT3}}>{a.reason}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
       <div style={{fontSize:9,color:TEXT3,marginTop:"1rem"}}>Odds padrão O/U: -110 (1.91x) · Modelo analítico</div>
     </div>
   );
 }
 
-// ── RulesAnalysis ─────────────────────────────────────────────────
-function RulesAnalysis({schedule,weekDates,savedOddsMap,sport}){
+function RulesAnalysis({schedule,dates,savedOddsMap,sport}){
   const [rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true);
   const mountedRef=useRef(true);
   const isBra=sport.id==="bra";
   useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false;};},[]);
   useEffect(()=>{
-    const finalGames=weekDates.flatMap(d=>(schedule[d]||[])).filter(g=>g.status==="Final");
-    if(!finalGames.length){setLoading(false);return;}
-    setLoading(true);
-    const eligible=finalGames.filter(g=>{
+    const finals=dates.flatMap(d=>(schedule[d]||[])).filter(g=>{
+      if(g.status!=="Final") return false;
       const{overUnder,realTotal}=getGameStats(g,savedOddsMap,sport);
       return!!overUnder&&realTotal!=null;
     });
-    if(!eligible.length){setLoading(false);return;}
-    Promise.all(eligible.map(async g=>{
-      const{hPpg,aPpg,avg,proj,overUnder,realTotal}=getGameStats(g,savedOddsMap,sport);
-      const histData=g.home_id&&g.away_id?await fetchHist(g.home_id,g.away_id,avg,sport):null;
-      const sug1=suggestion1(proj,overUnder);
-      const sug2=suggestion2(proj,overUnder,histData);
-      const sug3=suggestion3(histData);
-      const sug4=suggestion4(proj,overUnder,histData);
-      const sug5=suggestion5(proj,overUnder,histData,sport.minDiv);
-      const res1=calcResultForSuggestion(sug1,overUnder,realTotal);
-      const res2=calcResultForSuggestion(sug2,overUnder,realTotal);
-      const res3=calcResultForSuggestion(sug3,overUnder,realTotal);
-      const res4=calcResultForSuggestion(sug4,overUnder,realTotal);
-      const res5=calcResultForSuggestion(sug5,overUnder,realTotal);
-      const hAbbr=g.home_abbr||g.home.split(" ").pop();
-      const aAbbr=g.away_abbr||g.away.split(" ").pop();
-      const fields=histData?[
-        {label:`${hAbbr} temp.`,above:histData.home.above,total:histData.home.total},
-        {label:`${hAbbr} ult5`,above:histData.home.last5.above,total:histData.home.last5.total},
-        {label:`${aAbbr} def.temp.`,above:histData.away.above,total:histData.away.total},
-        {label:`${aAbbr} def.ult5`,above:histData.away.last5.above,total:histData.away.last5.total},
+    if(!finals.length){setLoading(false);setRows([]);return;}
+    setLoading(true);
+    Promise.all(finals.map(async g=>{
+      const{proj,overUnder,realTotal,avg}=getGameStats(g,savedOddsMap,sport);
+      const hist=g.home_id&&g.away_id?await fetchHist(g.home_id,g.away_id,avg,sport):null;
+      const s1=sug1(proj,overUnder),s2=sug2(proj,overUnder,hist),s3=sug3(hist);
+      const s4=sug4(proj,overUnder,hist),s5=sug5(proj,overUnder,hist,sport.minDiv);
+      const r1=calcResSug(s1,overUnder,realTotal),r2=calcResSug(s2,overUnder,realTotal);
+      const r3=calcResSug(s3,overUnder,realTotal),r4=calcResSug(s4,overUnder,realTotal);
+      const r5=calcResSug(s5,overUnder,realTotal);
+      const hA=g.home_abbr||g.home.split(" ").pop();
+      const aA=g.away_abbr||g.away.split(" ").pop();
+      const fields=hist?[
+        {label:`${hA} temp.`,above:hist.home.above,total:hist.home.total},
+        {label:`${hA} ult5`,above:hist.home.last5.above,total:hist.home.last5.total},
+        {label:`${aA} def.t`,above:hist.away.above,total:hist.away.total},
+        {label:`${aA} def.5`,above:hist.away.last5.above,total:hist.away.last5.total},
       ]:null;
-      return{g,hAbbr,aAbbr,proj,overUnder,realTotal,sug1,sug2,sug3,sug4,sug5,res1,res2,res3,res4,res5,histData,fields};
-    })).then(results=>{if(mountedRef.current){setRows(results);setLoading(false);}});
-  },[schedule,weekDates,savedOddsMap,sport]);
+      return{g,hA,aA,proj,overUnder,realTotal,s1,s2,s3,s4,s5,r1,r2,r3,r4,r5,fields};
+    })).then(res=>{if(mountedRef.current){setRows(res);setLoading(false);}});
+  },[schedule,dates,savedOddsMap,sport]);
 
-  const count=res=>rows.filter(r=>res(r)==="hit").length;
-  const total=res=>rows.filter(r=>res(r)==="hit"||res(r)==="miss").length;
-  const skipped=res=>rows.filter(r=>res(r)==="skip").length;
+  const cnt=fn=>rows.filter(r=>fn(r)==="hit").length;
+  const tot=fn=>rows.filter(r=>fn(r)==="hit"||fn(r)==="miss").length;
+  const skp=fn=>rows.filter(r=>fn(r)==="skip").length;
   const pct=(h,t)=>t>0?Math.round((h/t)*100):0;
-  const h1=count(r=>r.res1),t1=total(r=>r.res1);
-  const h2=count(r=>r.res2),t2=total(r=>r.res2),s2=skipped(r=>r.res2);
-  const h3=count(r=>r.res3),t3=total(r=>r.res3),s3=skipped(r=>r.res3);
-  const h4=count(r=>r.res4),t4=total(r=>r.res4),s4=skipped(r=>r.res4);
-  const h5=count(r=>r.res5),t5=total(r=>r.res5),s5=skipped(r=>r.res5);
-  const best=[{i:1,pct:pct(h1,t1)},{i:2,pct:pct(h2,t2)},{i:3,pct:pct(h3,t3)},{i:4,pct:pct(h4,t4)},{i:5,pct:pct(h5,t5)}].sort((a,b)=>b.pct-a.pct)[0]?.i;
-  const statL=sport.statLabel;
-  const RULE_LABELS=["Regra 1 — PPG vs Odd",`Regra 2 — ${statL} + Campos`,`Regra 3 — Só Campos`,"Regra 4 — Campos árbitro","Regra 5 — Convergência forte"];
-  const RULE_DESC=[`Proj ${statL} > Odd → OVER | Proj < Odd → UNDER`,`Mesma direção do ${statL}, validada por ≥3/4 campos`,"≥3 campos acima → OVER | ≥3 abaixo → UNDER | senão N/A",`Campos conflitam com ${statL} e ≥3 → seguir campos; senão ${statL}`,`${statL} + campos mesma dir. E diverg. ≥${sport.minDiv} ${sport.divLabel}; senão N/A`];
-  const YELLOW="#FFD600";
-  if(loading)return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Carregando análise...</div>;
-  if(!rows.length)return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Nenhum jogo finalizado com odds disponíveis.</div>;
-  const decLabel=sport.id==="bra"?2:1;
+  const stats=[
+    [cnt(r=>r.r1),tot(r=>r.r1),0],
+    [cnt(r=>r.r2),tot(r=>r.r2),skp(r=>r.r2)],
+    [cnt(r=>r.r3),tot(r=>r.r3),skp(r=>r.r3)],
+    [cnt(r=>r.r4),tot(r=>r.r4),skp(r=>r.r4)],
+    [cnt(r=>r.r5),tot(r=>r.r5),skp(r=>r.r5)],
+  ];
+  const best=stats.map((s,i)=>({i:i+1,pct:pct(s[0],s[1])})).sort((a,b)=>b.pct-a.pct)[0]?.i;
+  const sl=sport.statLabel;
+  const LABELS=["Regra 1 — PPG vs Odd",`Regra 2 — ${sl} + Campos`,"Regra 3 — Só Campos","Regra 4 — Campos árbitro","Regra 5 — Convergência forte"];
+  const DESCS=[`Proj ${sl} > Odd → OVER | Proj < Odd → UNDER`,`Mesma direção do ${sl}, validada por ≥3/4 campos`,"≥3 campos acima → OVER | ≥3 abaixo → UNDER",`Campos conflitam com ${sl} e ≥3 → seguir campos; senão ${sl}`,`${sl} + campos mesma dir. E diverg. ≥${sport.minDiv} ${sport.divLabel}`];
+
+  if(loading) return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Carregando análise...</div>;
+  if(!rows.length) return<div style={{padding:"3rem 2rem",textAlign:"center",color:TEXT3,fontSize:13}}>Nenhum jogo finalizado com odds disponíveis.</div>;
+
   return(
     <div style={{padding:"1.5rem 2rem",maxWidth:1000,margin:"0 auto"}}>
       <div style={{marginBottom:"1.5rem"}}>
         <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.15em",marginBottom:4}}>Análise comparativa — últimos 7 dias</div>
-        <div style={{fontSize:22,fontWeight:800,color:TEXT,letterSpacing:"-0.3px"}}>Taxa de Acerto por Regra</div>
-        <div style={{fontSize:12,color:TEXT2,marginTop:4}}>{rows.length} jogo(s) · threshold: maioria simples · zona neutra: {sport.id==="bra"?`±${sport.neutralZone} gols`:"N/A"}</div>
+        <div style={{fontSize:22,fontWeight:800,color:TEXT}}>Taxa de Acerto por Regra</div>
+        <div style={{fontSize:12,color:TEXT2,marginTop:4}}>{rows.length} jogo(s) · threshold: maioria simples{isBra?` · zona neutra: ±${sport.neutralZone} gols`:""}</div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:"2rem"}}>
-        {[[h1,t1,0,0],[h2,t2,s2,1],[h3,t3,s3,2],[h4,t4,s4,3],[h5,t5,s5,4]].map(([h,t,sk,i])=>{
-          const p=pct(h,t);const isBest=(i+1)===best;
+        {stats.map(([h,t,sk],i)=>{
+          const p=pct(h,t); const isBest=(i+1)===best;
           return(
             <div key={i} style={{background:SURFACE,border:`2px solid ${isBest?YELLOW:BORDER}`,borderRadius:12,padding:"1.25rem",position:"relative",overflow:"hidden"}}>
               {isBest&&<div style={{position:"absolute",top:0,left:0,right:0,height:3,background:YELLOW}}/>}
-              {isBest&&<div style={{position:"absolute",top:8,right:10,fontSize:9,color:YELLOW,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em"}}>✦ Melhor</div>}
-              <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{RULE_LABELS[i]}</div>
+              {isBest&&<div style={{position:"absolute",top:8,right:10,fontSize:9,color:YELLOW,fontWeight:700}}>✦ Melhor</div>}
+              <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{LABELS[i]}</div>
               <div style={{fontSize:36,fontWeight:800,color:p>=50?HIT_COLOR:MISS_COLOR,lineHeight:1,marginBottom:4}}>{p}%</div>
               <div style={{fontSize:13,color:TEXT2,marginBottom:8}}>{h}/{t} acertos</div>
               {sk>0&&<div style={{fontSize:10,color:TEXT3,marginBottom:8}}>{sk} N/A</div>}
               <div style={{height:5,background:SURFACE2,borderRadius:3,overflow:"hidden",marginBottom:8}}>
                 <div style={{width:`${p}%`,height:"100%",background:p>=50?HIT_COLOR:MISS_COLOR,borderRadius:3}}/>
               </div>
-              <div style={{fontSize:9,color:TEXT3,lineHeight:1.5}}>{RULE_DESC[i]}</div>
+              <div style={{fontSize:9,color:TEXT3,lineHeight:1.5}}>{DESCS[i]}</div>
             </div>
           );
         })}
@@ -761,41 +667,44 @@ function RulesAnalysis({schedule,weekDates,savedOddsMap,sport}){
             <div key={h} style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>{h}</div>
           ))}
         </div>
-        {rows.map(({g,hAbbr,aAbbr,overUnder,realTotal,sug1,sug2,sug3,sug4,sug5,res1,res2,res3,res4,res5,fields},idx)=>(
+        {rows.map(({g,hA,aA,overUnder,realTotal,s1,s2,s3,s4,s5,r1,r2,r3,r4,r5,fields},idx)=>(
           <div key={g.id} style={{borderBottom:idx<rows.length-1?`1px solid ${BORDER}`:"none"}}>
             <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 1fr 4fr",gap:0,padding:"10px 14px",alignItems:"center"}}>
               <div>
-                <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{hAbbr} vs {aAbbr}</div>
+                <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{hA} vs {aA}</div>
                 <div style={{fontSize:10,color:TEXT3}}>{g.home.split(" ").slice(-1)[0]} vs {g.away.split(" ").slice(-1)[0]}</div>
               </div>
               <div style={{fontSize:14,fontWeight:700,color:TEXT}}>{realTotal}</div>
-              <div style={{fontSize:13,color:TEXT2}}>{overUnder?.toFixed(decLabel)}</div>
-              <div><RuleChip suggestion={sug1} result={res1}/></div>
-              <div><RuleChip suggestion={sug2} result={res2}/></div>
-              <div><RuleChip suggestion={sug3} result={res3}/></div>
-              <div><RuleChip suggestion={sug4} result={res4}/></div>
+              <div style={{fontSize:13,color:TEXT2}}>{overUnder?.toFixed(1)}</div>
+              <div><RuleChip suggestion={s1} result={r1}/></div>
+              <div><RuleChip suggestion={s2} result={r2}/></div>
+              <div><RuleChip suggestion={s3} result={r3}/></div>
+              <div><RuleChip suggestion={s4} result={r4}/></div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                <RuleChip suggestion={sug5} result={res5}/>
-                {fields&&(<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
-                  {fields.map(f=>{
-                    const isAbove=fieldIsAbove(f.above,f.total);
-                    return(<span key={f.label} style={{fontSize:9,color:isAbove?GREEN:MISS_COLOR,background:isAbove?"rgba(0,200,83,0.08)":"rgba(200,16,46,0.08)",border:`1px solid ${isAbove?"rgba(0,200,83,0.2)":"rgba(200,16,46,0.2)"}`,borderRadius:4,padding:"1px 5px"}}>
-                      {f.label} {f.above}/{f.total}
-                    </span>);
-                  })}
-                </div>)}
+                <RuleChip suggestion={s5} result={r5}/>
+                {fields&&(
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
+                    {fields.map(f=>{
+                      const ia=fieldIsAbove(f.above,f.total);
+                      return(
+                        <span key={f.label} style={{fontSize:9,color:ia?GREEN:MISS_COLOR,background:ia?"rgba(0,200,83,0.08)":"rgba(200,16,46,0.08)",border:`1px solid ${ia?"rgba(0,200,83,0.2)":"rgba(200,16,46,0.2)"}`,borderRadius:4,padding:"1px 5px"}}>
+                          {f.label} {f.above}/{f.total}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         ))}
       </div>
       <div style={{marginTop:"1.25rem",display:"flex",gap:16,flexWrap:"wrap"}}>
-        {[["✓ hit","acertou",HIT_COLOR],["✗ miss","errou",MISS_COLOR],["— N/A","não apostar / sem dados",TEXT3]].map(([icon,desc,col])=>(
+        {[["✓ hit","acertou",HIT_COLOR],["✗ miss","errou",MISS_COLOR],["— N/A","não apostar",TEXT3]].map(([icon,desc,col])=>(
           <div key={icon} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:TEXT3}}>
             <span style={{color:col,fontWeight:700}}>{icon}</span> = {desc}
           </div>
         ))}
-        {sport.id==="bra"&&<div style={{fontSize:10,color:TEXT3}}>· Neutros (±{sport.neutralZone} gols) excluídos dos campos</div>}
       </div>
     </div>
   );
@@ -804,16 +713,17 @@ function RulesAnalysis({schedule,weekDates,savedOddsMap,sport}){
 // ══════════════════════════════════════════════════════════════════
 // ── App ───────────────────────────────────────────────────────────
 function App(){
-  const weekDates = getDateWindow();
+  const allDates=getDateWindow();
   const todayStr=getBrazilToday();
-  const [sportId,setSportId]=useState("nba");       // "nba" | "bra"
-  const [activeTab,setActiveTab]=useState("jogos"); // "jogos" | "regras"
+  const [sportId,setSportId]=useState("nba");
+  const [activeTab,setActiveTab]=useState("jogos");
   const [selDate,setSelDate]=useState(todayStr);
   const [schedules,setSchedules]=useState({nba:{},bra:{}});
   const [savedOddsMaps,setSavedOddsMaps]=useState({nba:{},bra:{}});
   const [editing,setEditing]=useState(null);
   const [loadings,setLoadings]=useState({nba:true,bra:true});
   const [updatedAts,setUpdatedAts]=useState({nba:null,bra:null});
+  const carouselRef=useRef(null);
 
   const sport=SPORTS[sportId];
   const schedule=schedules[sportId];
@@ -821,24 +731,23 @@ function App(){
   const loading=loadings[sportId];
   const updatedAt=updatedAts[sportId];
 
-  // Carrega dados de um esporte
   async function loadSport(sid){
     setLoadings(p=>({...p,[sid]:true}));
     try{
       const dates=getDateWindow();
       const start=dates[0].replace(/-/g,"");
       const end=dates[13].replace(/-/g,"");
-      const endpoint=sid==="bra"?"/api/games-soccer":"/api/games";
-      const r=await fetch(`${endpoint}?bust=${Date.now()}&start=${start}&end=${end}`);
+      const ep=sid==="bra"?"/api/games-soccer":"/api/games";
+      const r=await fetch(`${ep}?bust=${Date.now()}&start=${start}&end=${end}`);
       const d=await r.json();
       if(d.schedule){
         setSchedules(p=>({...p,[sid]:d.schedule}));
         setUpdatedAts(p=>({...p,[sid]:new Date()}));
-        const allGames=Object.values(d.schedule).flat();
-        await saveOddsToKV(allGames,SPORTS[sid]);
-        const finalIds=allGames.filter(g=>g.status==="Final"&&!g.over_under).map(g=>String(g.id));
-        if(finalIds.length){
-          const om=await loadOddsFromKV(finalIds);
+        const all=Object.values(d.schedule).flat();
+        await saveOddsToKV(all,SPORTS[sid]);
+        const fids=all.filter(g=>g.status==="Final"&&!g.over_under).map(g=>String(g.id));
+        if(fids.length){
+          const om=await loadOddsFromKV(fids);
           setSavedOddsMaps(p=>({...p,[sid]:{...p[sid],...om}}));
         }
       }
@@ -847,33 +756,40 @@ function App(){
   }
 
   useEffect(()=>{
-    loadSport("nba");loadSport("bra");
+    loadSport("nba"); loadSport("bra");
     const id=setInterval(()=>{loadSport("nba");loadSport("bra");},30*60*1000);
     return()=>clearInterval(id);
   },[]);
+
+  // Scroll carrossel até hoje
+  useEffect(()=>{
+    if(!carouselRef.current) return;
+    const btn=carouselRef.current.querySelector("[data-today='true']");
+    if(btn) btn.scrollIntoView({behavior:"smooth",block:"nearest",inline:"center"});
+  },[sportId,activeTab]);
 
   const selGames=schedule[selDate]||[];
   const finals=selGames.filter(g=>g.status==="Final").length;
 
   function handleSave(hs,vs){
-    setSchedules(p=>({...p,[sportId]:{...p[sportId],[selDate]:p[sportId][selDate].map(g=>g.id===editing.id?{...g,hs,vs,status:"Final"}:g)}}));
+    setSchedules(p=>({
+      ...p,[sportId]:{
+        ...p[sportId],
+        [selDate]:p[sportId][selDate].map(g=>g.id===editing.id?{...g,hs,vs,status:"Final"}:g)
+      }
+    }));
     setEditing(null);
   }
-
-  // Sport selector colors
-  const sp=sport;
-  const otherSport=SPORTS[sportId==="nba"?"bra":"nba"];
 
   return(
     <div style={{background:BG,minHeight:"100vh",fontFamily:"inherit"}}>
       {editing&&<EditModal game={editing} onSave={handleSave} onClose={()=>setEditing(null)} sport={sport}/>}
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{background:SURFACE,borderBottom:`1px solid ${BORDER}`}}>
         <div style={{maxWidth:1800,margin:"0 auto",padding:"1rem 2rem 0"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
             <div style={{display:"flex",alignItems:"center",gap:14}}>
-
               {/* Sport selector */}
               <div style={{display:"flex",border:`1px solid ${BORDER}`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
                 {Object.values(SPORTS).map(s=>(
@@ -881,20 +797,14 @@ function App(){
                     style={{padding:"7px 16px",fontSize:12,fontWeight:sportId===s.id?700:400,
                       background:sportId===s.id?s.primary:"transparent",
                       color:sportId===s.id?"#fff":TEXT2,border:"none",cursor:"pointer",
-                      borderRight:s.id==="nba"?`1px solid ${BORDER}`:"none",transition:"background .15s"}}>
+                      borderRight:s.id==="nba"?`1px solid ${BORDER}`:"none"}}>
                     {s.icon} {s.label}
                   </button>
                 ))}
               </div>
-
-              {/* Title */}
               <div>
-                <div style={{fontSize:9,color:TEXT2,textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:600}}>
-                  {sport.season}
-                </div>
-                <div style={{fontSize:26,fontWeight:800,color:TEXT,letterSpacing:"-0.5px"}}>
-                  Análise de Confrontos
-                </div>
+                <div style={{fontSize:9,color:TEXT2,textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:600}}>{sport.season}</div>
+                <div style={{fontSize:26,fontWeight:800,color:TEXT,letterSpacing:"-0.5px"}}>Análise de Confrontos</div>
               </div>
             </div>
             <div style={{textAlign:"right",fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>
@@ -903,11 +813,11 @@ function App(){
           </div>
 
           {/* Tabs */}
-          <div style={{display:"flex",gap:0}}>
+          <div style={{display:"flex"}}>
             {[["jogos","📅 Jogos"],["regras","📊 Análise de regras"]].map(([tab,label])=>(
               <button key={tab} onClick={()=>setActiveTab(tab)} style={{
-                background:"transparent",color:activeTab===tab?TEXT:TEXT3,
-                border:"none",borderBottom:activeTab===tab?`3px solid ${sport.secondary}`:`3px solid transparent`,
+                background:"transparent",color:activeTab===tab?TEXT:TEXT3,border:"none",
+                borderBottom:activeTab===tab?`3px solid ${sport.secondary}`:`3px solid transparent`,
                 padding:"8px 18px 10px",cursor:"pointer",fontSize:12,
                 fontWeight:activeTab===tab?700:400,borderRadius:"4px 4px 0 0",
               }}>{label}</button>
@@ -916,26 +826,22 @@ function App(){
         </div>
       </div>
 
-      {/* ── Day selector carrossel ── */}
+      {/* Carousel */}
       {activeTab==="jogos"&&(
         <div style={{background:SURFACE,borderBottom:`1px solid ${BORDER}`}}>
-          <div style={{
-            display:"flex",overflowX:"auto",scrollbarWidth:"none",
-            msOverflowStyle:"none",padding:"0 2rem",
-          }} ref={carouselRef}>
-            <style>{`#day-carousel::-webkit-scrollbar{display:none}`}</style>
-            {weekDates.map(d=>{
-              const isToday=d===todayStr, isSel=d===selDate;
-              const isPast=d<todayStr;
+          <div className="carousel" ref={carouselRef}
+            style={{display:"flex",overflowX:"auto",scrollbarWidth:"none",msOverflowStyle:"none",padding:"0 2rem"}}>
+            {allDates.map(d=>{
+              const isToday=d===todayStr, isSel=d===selDate, isPast=d<todayStr;
               const games=schedule[d]||[];
               const fin=games.filter(g=>g.status==="Final").length, tot=games.length;
               const dayName=DAYS_PT[new Date(d+"T12:00:00").getDay()];
               const dayNum=new Date(d+"T12:00:00").getDate();
               const dayHits=games.filter(g=>g.status==="Final"&&getGameStats(g,savedOddsMap,sport).result==="hit").length;
-              const dayWithOdds=games.filter(g=>g.status==="Final"&&!!getGameStats(g,savedOddsMap,sport).overUnder).length;
+              const dayOdds=games.filter(g=>g.status==="Final"&&!!getGameStats(g,savedOddsMap,sport).overUnder).length;
               return(
                 <button key={d} data-today={isToday?"true":undefined} onClick={()=>setSelDate(d)} style={{
-                  flexShrink:0,width:72,
+                  flexShrink:0, width:72,
                   background:isSel?sport.primary:"transparent",
                   color:isSel?"#fff":isToday?sport.primary:isPast?TEXT3:TEXT2,
                   border:"none",
@@ -946,12 +852,8 @@ function App(){
                 }}>
                   <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>{dayName}</span>
                   <span style={{fontSize:15,fontWeight:800}}>{dayNum}</span>
-                  <span style={{fontSize:9,color:isSel?"rgba(255,255,255,0.6)":TEXT3}}>
-                    {tot>0?(fin>0?`${fin}/${tot}`:`${tot}j`):"—"}
-                  </span>
-                  {dayWithOdds>0&&<span style={{fontSize:8,color:isSel?"rgba(255,255,255,0.5)":dayHits/dayWithOdds>=0.5?"rgba(0,200,83,0.8)":"rgba(200,16,46,0.8)"}}>
-                    {dayHits}/{dayWithOdds}
-                  </span>}
+                  <span style={{fontSize:9,color:isSel?"rgba(255,255,255,0.6)":TEXT3}}>{tot>0?(fin>0?`${fin}/${tot}`:`${tot}j`):"—"}</span>
+                  {dayOdds>0&&<span style={{fontSize:8,color:isSel?"rgba(255,255,255,0.5)":dayHits/dayOdds>=0.5?"rgba(0,200,83,0.8)":"rgba(200,16,46,0.8)"}}>{dayHits}/{dayOdds}</span>}
                 </button>
               );
             })}
@@ -959,37 +861,37 @@ function App(){
         </div>
       )}
 
-      {/* ── Tab: Jogos ── */}
+      {/* Tab: Jogos */}
       {activeTab==="jogos"&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 460px",gap:0,alignItems:"start",width:"100%"}}>
           <div style={{maxWidth:760,margin:"0 auto",width:"100%",padding:"1.25rem 0 1.25rem 2rem"}}>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:"1.25rem"}}>
-              {[["Jogos",selGames.length||"—"],["Finalizados",finals||"—"],[sport.id==="bra"?"Rodada":"+Alto proj.",sport.id==="bra"?(selGames[0]?.round||"—"):selGames.length>0?`${Math.round(Math.max(...selGames.map(g=>(g.home_ppg||0)+(g.away_ppg||0)).filter(Boolean),0))} pts`:"—"]].map(([l,v])=>(
+              {[["Jogos",selGames.length||"—"],["Finalizados",finals||"—"],[sport.id==="bra"?"Rodada":"Jogos hoje",sport.id==="bra"?(selGames[0]?.round||"—"):selGames.length||"—"]].map(([l,v])=>(
                 <div key={l} style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:10,padding:"0.75rem 1rem"}}>
                   <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>{l}</div>
                   <div style={{fontSize:20,fontWeight:800,color:TEXT}}>{v}</div>
                 </div>
               ))}
             </div>
-            <AccuracyReport schedule={schedule} weekDates={weekDates} selDate={selDate} savedOddsMap={savedOddsMap} sport={sport}/>
+            <AccuracyReport schedule={schedule} dates={allDates} selDate={selDate} savedOddsMap={savedOddsMap} sport={sport}/>
             {loading&&<div style={{textAlign:"center",padding:"3rem 0",color:TEXT3,fontSize:13}}>Carregando jogos...</div>}
             {!loading&&selGames.length===0&&<div style={{textAlign:"center",padding:"3rem 0",color:TEXT3,fontSize:13}}>Nenhum jogo para este dia.</div>}
             {selGames.map(g=><MatchupCard key={g.id} game={g} savedOddsMap={savedOddsMap} onEdit={setEditing} sport={sport}/>)}
             <div style={{fontSize:9,color:TEXT3,marginTop:"1rem",textAlign:"center",letterSpacing:"0.05em"}}>
-              {sport.id==="bra"?"Jogos e estatísticas: ESPN API (bra.1) · Atualização a cada 30 min":"Jogos, PPG, odds e histórico: ESPN API · Atualização a cada 30 min"}
+              {sport.id==="bra"?"Dados: ESPN API (bra.1) · Atualização a cada 30 min":"Jogos, PPG, odds e histórico: ESPN API · Atualização a cada 30 min"}
             </div>
           </div>
           <div style={{position:"sticky",top:0,height:"100vh",overflowY:"auto",borderLeft:`1px solid ${BORDER}`,background:SURFACE}}>
             <div style={{padding:"1.25rem"}}>
-              <BettingSimulator schedule={schedule} weekDates={weekDates} savedOddsMap={savedOddsMap} selDate={selDate} sport={sport}/>
+              <BettingSimulator schedule={schedule} dates={allDates} savedOddsMap={savedOddsMap} selDate={selDate} sport={sport}/>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Tab: Análise de Regras ── */}
+      {/* Tab: Regras */}
       {activeTab==="regras"&&(
-        <RulesAnalysis schedule={schedule} weekDates={weekDates} savedOddsMap={savedOddsMap} sport={sport}/>
+        <RulesAnalysis schedule={schedule} dates={allDates} savedOddsMap={savedOddsMap} sport={sport}/>
       )}
     </div>
   );
