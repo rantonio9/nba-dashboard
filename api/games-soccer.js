@@ -1,20 +1,24 @@
-const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1";
+const ESPN_BASE_SOCCER = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const cache = {};
 const CACHE_TTL = 60 * 60 * 1000;
 const NEUTRAL_ZONE = 0.5;
 
-async function espnFetch(path) {
-  const r = await fetch(`${ESPN_BASE}${path}`);
+async function espnFetch(url) {
+  const r = await fetch(url);
   if (!r.ok) throw new Error(`ESPN ${r.status}`);
   return r.json();
 }
 
+// Usa soccer/all para pegar resultados de todas as competições do time
 async function getTeamGoalsScored(teamId, n = 20) {
   const key = `scored_${teamId}`;
   if (cache[key] && Date.now() - cache[key].ts < CACHE_TTL) return cache[key].data;
-  const data   = await espnFetch(`/teams/${teamId}/schedule?season=2026`);
+
+  const url = `${ESPN_BASE_SOCCER}/all/teams/${teamId}/schedule`;
+  const data = await espnFetch(url);
   const events = data.events || [];
   const scores = [];
+
   for (const ev of events) {
     const comp = ev.competitions?.[0];
     if (!comp?.status?.type?.completed) continue;
@@ -25,6 +29,7 @@ async function getTeamGoalsScored(teamId, n = 20) {
     const score = competitor.score?.value ?? parseInt(competitor.score);
     if (score >= 0 && !isNaN(score)) scores.push(score);
   }
+
   const result = scores.slice(-n);
   cache[key] = { data: result, ts: Date.now() };
   return result;
@@ -33,9 +38,12 @@ async function getTeamGoalsScored(teamId, n = 20) {
 async function getTeamGoalsConceded(teamId, n = 20) {
   const key = `conceded_${teamId}`;
   if (cache[key] && Date.now() - cache[key].ts < CACHE_TTL) return cache[key].data;
-  const data   = await espnFetch(`/teams/${teamId}/schedule?season=2026`);
+
+  const url = `${ESPN_BASE_SOCCER}/all/teams/${teamId}/schedule`;
+  const data = await espnFetch(url);
   const events = data.events || [];
   const conceded = [];
+
   for (const ev of events) {
     const comp = ev.competitions?.[0];
     if (!comp?.status?.type?.completed) continue;
@@ -46,6 +54,7 @@ async function getTeamGoalsConceded(teamId, n = 20) {
     const score = opponent.score?.value ?? parseInt(opponent.score);
     if (score >= 0 && !isNaN(score)) conceded.push(score);
   }
+
   const result = conceded.slice(-n);
   cache[key] = { data: result, ts: Date.now() };
   return result;
