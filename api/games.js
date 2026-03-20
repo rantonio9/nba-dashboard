@@ -71,14 +71,17 @@ export default async function handler(req, res) {
 
   try {
     const today = getBrazilToday();
-    // Aceita start/end via query para suportar janela de próximos 7 dias
-    const start = req.query.start || getLast7Dates(today)[0].replace(/-/g,"");
-    const end   = req.query.end   || getLast7Dates(today)[6].replace(/-/g,"");
+    const qStart = req.query.start;
+    const qEnd   = req.query.end;
 
-    // Reconstrói as datas a partir de start/end
-    const dates = Array.from({length:7},(_,i)=>{
-      const d = new Date(start.slice(0,4)+"-"+start.slice(4,6)+"-"+start.slice(6,8)+"T12:00:00");
-      d.setDate(d.getDate()+i);
+    // Monta array de datas entre start e end (até 14 dias)
+    const startStr = qStart || getLast7Dates(today)[0].replace(/-/g,"");
+    const endStr   = qEnd   || getLast7Dates(today)[6].replace(/-/g,"");
+    const startDate = new Date(`${startStr.slice(0,4)}-${startStr.slice(4,6)}-${startStr.slice(6,8)}T12:00:00`);
+    const endDate   = new Date(`${endStr.slice(0,4)}-${endStr.slice(4,6)}-${endStr.slice(6,8)}T12:00:00`);
+    const diffDays  = Math.round((endDate-startDate)/(1000*60*60*24))+1;
+    const dates = Array.from({length:diffDays},(_,i)=>{
+      const d=new Date(startDate); d.setDate(startDate.getDate()+i);
       return d.toISOString().split("T")[0];
     });
 
