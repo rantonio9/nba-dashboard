@@ -100,10 +100,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const today     = getBrazilToday();
-    const dates     = getLast7Dates(today);
-    const start     = dates[0].replace(/-/g, "");
-    const end       = dates[6].replace(/-/g, "");
+    const today = getBrazilToday();
+    const start = req.query.start || getLast7Dates(today)[0].replace(/-/g,"");
+    const end   = req.query.end   || getLast7Dates(today)[6].replace(/-/g,"");
+
+    const dates = Array.from({length:7},(_,i)=>{
+      const d = new Date(start.slice(0,4)+"-"+start.slice(4,6)+"-"+start.slice(6,8)+"T12:00:00");
+      d.setDate(d.getDate()+i);
+      return d.toISOString().split("T")[0];
+    });
 
     const data   = await espnFetch(`/scoreboard?dates=${start}-${end}&limit=100`);
     const events = data.events || [];
