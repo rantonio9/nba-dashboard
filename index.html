@@ -31,7 +31,7 @@ const SPORTS={
   nba:{id:"nba",label:"NBA",icon:"🏀",primary:NBA_BLUE,secondary:NBA_RED,season:"2025-26",
     statLabel:"PPG",avgLabel:"média",projLabel:"total proj.",realLabel:"total real",
     divLabel:"pts",minDiv:5,ppgKey:"home_ppg"},
-  bra:{id:"bra",label:"Brasileirão",icon:"🇧🇷",primary:BRA_GREEN,secondary:BRA_YELLOW,season:"2025",
+  bra:{id:"bra",label:"Brasileirão",icon:"BR",primary:BRA_GREEN,secondary:BRA_YELLOW,season:"2025",
     statLabel:"GPJ",avgLabel:"média",projLabel:"gols proj.",realLabel:"gols reais",
     divLabel:"gl",minDiv:0.3,ppgKey:"home_ppg"},
 };
@@ -387,10 +387,10 @@ function MatchupCard({game,om,onEdit,sport,leagueBaseRate,gameDate}){
               <div style={{fontSize:10,color:TEXT2,marginTop:4}}>{game.home}</div>
               <div style={{fontSize:12,color:TEXT3,marginTop:2}}>{hPpg.toFixed(dec)} {isBra?"gl/j atq":sport.statLabel}</div>
               {game.home_record&&<div style={{fontSize:10,color:TEXT3}}>{game.home_record}</div>}
+              {(fin||isLive)&&<div style={{fontSize:34,fontWeight:800,color:hWin?TEXT:TEXT2,marginTop:8,lineHeight:1}}>{game.hs}</div>}
             </div>
             {game.home_logo&&<img src={game.home_logo} alt={hAbbr} style={{width:78,height:78,objectFit:"contain",flexShrink:0,alignSelf:"flex-start"}} onError={e=>{e.target.style.display="none";}}/>}
           </div>
-          {(fin||isLive)&&<div style={{fontSize:30,fontWeight:800,color:hWin?TEXT:TEXT2,marginTop:6,lineHeight:1}}>{game.hs}</div>}
         </div>
         <div style={{textAlign:"center",padding:"0 8px"}}>
           <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{sport.avgLabel}</div>
@@ -413,9 +413,9 @@ function MatchupCard({game,om,onEdit,sport,leagueBaseRate,gameDate}){
               <div style={{fontSize:10,color:TEXT2,marginTop:4}}>{game.away}</div>
               <div style={{fontSize:12,color:TEXT3,marginTop:2}}>{aPpg.toFixed(dec)} {isBra?"gl/j def":sport.statLabel}</div>
               {game.away_record&&<div style={{fontSize:10,color:TEXT3}}>{game.away_record}</div>}
+              {(fin||isLive)&&<div style={{fontSize:34,fontWeight:800,color:aWin?TEXT:TEXT2,marginTop:8,lineHeight:1}}>{game.vs}</div>}
             </div>
           </div>
-          {(fin||isLive)&&<div style={{fontSize:30,fontWeight:800,color:aWin?TEXT:TEXT2,marginTop:6,lineHeight:1}}>{game.vs}</div>}
         </div>
       </div>
       <OddsPanel proj={proj} overUnder={overUnder} spread={spread} result={result} realTotal={realTotal} sport={sport}/>
