@@ -1,48 +1,620 @@
---- a/index.html
-+++ b/index.html
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NBA 2025-26 · Análise de Confrontos</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button{font-family:inherit}
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect } = React;
 
-// ── 1. saveOddsToKV: só envia jogos ainda não finalizados
-//    (o servidor já protege, mas evitamos chamadas desnecessárias)
--  const toSave = games.filter(g => g.status !== "Final" && g.over_under).map(g => ({
-+  const toSave = games.filter(g => g.status === "Agendado" && g.over_under).map(g => ({
-     id: g.id, over_under: g.over_under, spread: g.spread || null,
-     proj: (g.home_ppg || PPG_FB[g.home] || 0) + (g.away_ppg || PPG_FB[g.away] || 0),
-   }));
+const NBA_BLUE="#1D428A", NBA_RED="#C8102E", NBA_WHITE="#fff";
+const BG="#0a0a0a", SURFACE="#111", SURFACE2="#1a1a1a", BORDER="#242424";
+const TEXT="#fff", TEXT2="#A0A0A0", TEXT3="#555";
+const GREEN="#00C853", HIT_COLOR="#00C853", MISS_COLOR="#C8102E";
+const DAYS_PT=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 
+const PPG_FB={
+  "Detroit Pistons":117.2,"Boston Celtics":115.3,"New York Knicks":118.0,
+  "Cleveland Cavaliers":120.0,"Toronto Raptors":113.8,"Philadelphia 76ers":116.2,
+  "Orlando Magic":115.1,"Miami Heat":119.6,"Charlotte Hornets":115.7,
+  "Atlanta Hawks":117.3,"Chicago Bulls":116.8,"Milwaukee Bucks":111.8,
+  "Brooklyn Nets":107.7,"Indiana Pacers":111.1,"Washington Wizards":112.2,
+  "Oklahoma City Thunder":120.2,"San Antonio Spurs":118.1,"Denver Nuggets":120.4,
+  "Houston Rockets":114.6,"Minnesota Timberwolves":119.7,"Los Angeles Lakers":115.9,
+  "Phoenix Suns":113.6,"Golden State Warriors":115.5,"LA Clippers":111.9,
+  "Portland Trail Blazers":116.0,"Memphis Grizzlies":115.3,"Dallas Mavericks":114.1,
+  "Utah Jazz":118.2,"New Orleans Pelicans":114.6,"Sacramento Kings":110.1,
+};
 
-// ── 2. HistoryPanel: recebe game_date e passa para a API
--  function HistoryPanel({ homeId, awayId, matchupAvg, homeAbbr, awayAbbr }) {
-+  function HistoryPanel({ homeId, awayId, matchupAvg, homeAbbr, awayAbbr, gameDate }) {
-     ...
-     useEffect(() => {
-       if (!homeId || !awayId) return;
-       setLoading(true);
--      fetch(`/api/history?home_id=${homeId}&away_id=${awayId}&matchup_avg=${matchupAvg}`)
-+      fetch(`/api/history?home_id=${homeId}&away_id=${awayId}&matchup_avg=${matchupAvg}&game_date=${gameDate}`)
-         .then(r => r.json()).then(d => { setData(d); setLoading(false); })
-         .catch(() => setLoading(false));
--    }, [homeId, awayId, matchupAvg]);
-+    }, [homeId, awayId, matchupAvg, gameDate]);
-     ...
-   }
+function getBrazilToday() {
+  return new Date(Date.now()-3*60*60*1000).toISOString().split("T")[0];
+}
 
+function getWeekDates() {
+  const brt=new Date(Date.now()-3*60*60*1000);
+  const mon=new Date(brt);
+  mon.setDate(brt.getDate()-((brt.getDay()+6)%7));
+  return Array.from({length:7},(_,i)=>{
+    const d=new Date(mon); d.setDate(mon.getDate()+i);
+    return d.toISOString().split("T")[0];
+  });
+}
 
-// ── 3. MatchupCard: passa gameDate para HistoryPanel
-   // No objeto game, adicionar date no parseGame (games.js já retorna via schedule key)
-   // Em MatchupCard, extrair a data do próprio schedule ou passar via prop
+async function saveOddsToKV(games) {
+  // CORREÇÃO: só salva jogos Agendados — nunca jogos em andamento ou finalizados
+  // O PPG da ESPN já está contaminado pelo resultado assim que o jogo termina
+  const toSave=games.filter(g=>g.status==="Agendado"&&g.over_under).map(g=>({
+    id: g.id, over_under: g.over_under, spread: g.spread||null,
+    proj: (g.home_ppg||PPG_FB[g.home]||0)+(g.away_ppg||PPG_FB[g.away]||0),
+  }));
+  if(!toSave.length) return;
+  try {
+    await fetch("/api/save-odds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({games:toSave})});
+  } catch(e) { console.error("save-odds failed:",e); }
+}
 
-   // Adicionar prop gameDate em MatchupCard:
--  function MatchupCard({ game, savedOddsMap, onEdit }) {
-+  function MatchupCard({ game, savedOddsMap, onEdit, gameDate }) {
-     ...
-     {game.home_id && game.away_id && (
--      <HistoryPanel homeId={game.home_id} awayId={game.away_id} matchupAvg={avg} homeAbbr={hAbbr} awayAbbr={aAbbr}/>
-+      <HistoryPanel homeId={game.home_id} awayId={game.away_id} matchupAvg={avg} homeAbbr={hAbbr} awayAbbr={aAbbr} gameDate={gameDate}/>
-     )}
-     ...
-   }
+async function loadOddsFromKV(gameIds) {
+  if(!gameIds.length) return {};
+  try {
+    const r=await fetch(`/api/get-odds?ids=${gameIds.join(",")}`);
+    const d=await r.json();
+    return d.odds||{};
+  } catch { return {}; }
+}
 
+function calcResult(proj, overUnder, realTotal) {
+  if(!overUnder||realTotal==null) return null;
+  return (proj>overUnder)===(realTotal>overUnder) ? "hit" : "miss";
+}
 
-// ── 4. Onde MatchupCard é renderizado, passar selDate como gameDate:
--  {selGames.map(g => <MatchupCard key={g.id} game={g} savedOddsMap={savedOddsMap} onEdit={setEditing}/>)}
-+  {selGames.map(g => <MatchupCard key={g.id} game={g} savedOddsMap={savedOddsMap} onEdit={setEditing} gameDate={selDate}/>)}
+function getGameStats(game, savedOddsMap) {
+  const hPpg=game.home_ppg||PPG_FB[game.home]||0;
+  const aPpg=game.away_ppg||PPG_FB[game.away]||0;
+  const saved=savedOddsMap?.[String(game.id)];
+  const overUnder=game.over_under||saved?.over_under||null;
+  const spread=game.spread||saved?.spread||null;
+  const projDisplay=(game.status==="Final"&&saved?.proj)?saved.proj:(hPpg+aPpg);
+  const avgDisplay=parseFloat((projDisplay/2).toFixed(1));
+  const realTotal=(game.hs!=null&&game.vs!=null)?game.hs+game.vs:null;
+  const result=game.status==="Final"?calcResult(saved?.proj||(hPpg+aPpg),overUnder,realTotal):null;
+  return {hPpg,aPpg,avg:avgDisplay,proj:projDisplay,realTotal,result,overUnder,spread};
+}
+
+// ── Kelly ────────────────────────────────────────────────────────
+function kellyFraction(p, decOdds) {
+  const b=decOdds-1, q=1-p;
+  return (b*p-q)/b;
+}
+
+function estimateProb(histAcc, divergence) {
+  const base=Math.min(0.75,Math.max(0.4,histAcc));
+  const bonus=Math.min(0.10,(Math.abs(divergence)/5)*0.02);
+  return Math.min(0.75,base+bonus);
+}
+
+// ── Simulador ────────────────────────────────────────────────────
+function BettingSimulator({schedule, weekDates, savedOddsMap, selDate}) {
+  const [banca,setBanca]=useState(1000);
+  const [minDiv,setMinDiv]=useState(5);
+  const [kFrac,setKFrac]=useState(0.5);
+  const [maxPct,setMaxPct]=useState(5);
+
+  const weekGames=weekDates.flatMap(d=>(schedule[d]||[]).filter(g=>g.status==="Final"));
+  const withOdds=weekGames.filter(g=>!!getGameStats(g,savedOddsMap).overUnder);
+  const hits=withOdds.filter(g=>getGameStats(g,savedOddsMap).result==="hit");
+  const histAcc=withOdds.length>0?hits.length/withOdds.length:0.55;
+
+  const todayGames=(schedule[selDate]||[]).filter(g=>{
+    if(g.status==="Final") return false;
+    return !!getGameStats(g,savedOddsMap).overUnder;
+  });
+
+  const allocations=todayGames.map(g=>{
+    const {proj,overUnder}=getGameStats(g,savedOddsMap);
+    const div=proj-overUnder;
+    const absDiv=Math.abs(div);
+    if(absDiv<minDiv) return {game:g,reason:"divergência insuficiente",alloc:0};
+    const p=estimateProb(histAcc,div);
+    const odds=1.91;
+    const kf=kellyFraction(p,odds);
+    if(kf<=0) return {game:g,reason:"edge negativo",alloc:0};
+    const rawPct=kf*kFrac*100;
+    const cappedPct=Math.min(maxPct,rawPct);
+    const alloc=parseFloat(((cappedPct/100)*banca).toFixed(2));
+    const side=div>0?"OVER":"UNDER";
+    const retorno=parseFloat((alloc*(odds-1)).toFixed(2));
+    return {game:g,div,absDiv,p,kf,rawPct,cappedPct,alloc,side,retorno,overUnder,reason:null};
+  });
+
+  const eligible=allocations.filter(a=>a.alloc>0);
+  const excluded=allocations.filter(a=>a.alloc===0);
+  const totalAlloc=eligible.reduce((s,a)=>s+a.alloc,0);
+  const totalRet=eligible.reduce((s,a)=>s+a.retorno,0);
+  const pctBanca=parseFloat(((totalAlloc/banca)*100).toFixed(1));
+
+  return (
+    <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,padding:"1.25rem",marginBottom:"1.25rem"}}>
+      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:"1rem"}}>Simulador de alocação — Kelly</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:"1.25rem"}}>
+        {[
+          ["Banca (R$)",banca,setBanca,50,100000,50],
+          ["Divergência mínima (pts)",minDiv,setMinDiv,1,20,1],
+          ["Nível de risco",kFrac,setKFrac,0.1,1,0.05],
+          ["Teto por jogo (%)",maxPct,setMaxPct,1,20,1],
+        ].map(([label,val,setter,min,max,step])=>(
+          <div key={label}>
+            <div style={{fontSize:9,color:TEXT3,marginBottom:4}}>{label}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <input type="range" min={min} max={max} step={step} value={val} onChange={e=>setter(Number(e.target.value))} style={{flex:1}}/>
+              <span style={{fontSize:13,fontWeight:700,color:TEXT,minWidth:40,textAlign:"right"}}>
+                {label.includes("Fração")?val.toFixed(1):val}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:SURFACE2,borderRadius:8,padding:"8px 12px",marginBottom:"1rem",display:"flex",alignItems:"center",gap:12}}>
+        <div>
+          <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>Acurácia histórica (semana)</div>
+          <div style={{fontSize:16,fontWeight:800,color:histAcc>=0.5?HIT_COLOR:MISS_COLOR}}>
+            {hits.length}/{withOdds.length} — {Math.round(histAcc*100)}%
+          </div>
+        </div>
+        <div style={{width:1,height:32,background:BORDER}}/>
+        <div style={{fontSize:10,color:TEXT3,lineHeight:1.5}}>
+          Probabilidade base usada no Kelly.<br/>Atualiza conforme mais jogos finalizam.
+        </div>
+      </div>
+      {todayGames.length===0&&(
+        <div style={{textAlign:"center",padding:"1.5rem 0",color:TEXT3,fontSize:12}}>
+          Nenhum jogo agendado com odds disponíveis.
+        </div>
+      )}
+      {eligible.length>0&&(
+        <>
+          <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>
+            Jogos selecionados ({eligible.length})
+          </div>
+          {eligible.map(a=>{
+            const hA=a.game.home_abbr||a.game.home.split(" ").pop();
+            const aA=a.game.away_abbr||a.game.away.split(" ").pop();
+            return (
+              <div key={a.game.id} style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:15,fontWeight:700,color:TEXT,marginBottom:5}}>{hA} vs {aA}</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                      <div style={{fontSize:11,color:TEXT2}}>
+                        Apostar: <span style={{color:a.side==="OVER"?HIT_COLOR:NBA_BLUE,fontWeight:700}}>{a.side} {a.overUnder}</span>
+                      </div>
+                      <div style={{fontSize:11,color:TEXT2}}>
+                        Divergência: <span style={{color:TEXT}}>{a.div>0?"+":""}{a.div.toFixed(1)} pts</span>
+                      </div>
+                      <div style={{fontSize:11,color:TEXT2}}>
+                        P(acerto): <span style={{color:TEXT}}>{Math.round(a.p*100)}%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0,marginLeft:12}}>
+                    <div style={{fontSize:18,fontWeight:800,color:HIT_COLOR}}>R$ {a.alloc.toFixed(2)}</div>
+                    <div style={{fontSize:10,color:TEXT3,marginTop:2}}>{a.cappedPct.toFixed(1)}% da banca</div>
+                    <div style={{fontSize:10,color:TEXT3}}>retorno: R$ {a.retorno.toFixed(2)}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          <div style={{background:SURFACE2,borderRadius:10,padding:"10px 12px",border:`1px solid ${BORDER}`,marginTop:4}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              {[["Total alocado",`R$ ${totalAlloc.toFixed(2)}`],["% da banca",`${pctBanca}%`],["Retorno potencial",`R$ ${totalRet.toFixed(2)}`]].map(([l,v])=>(
+                <div key={l} style={{textAlign:"center"}}>
+                  <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>{l}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:TEXT}}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+      {excluded.length>0&&(
+        <div style={{marginTop:"1rem"}}>
+          <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>Excluídos ({excluded.length})</div>
+          {excluded.map(a=>{
+            const hA=a.game.home_abbr||a.game.home.split(" ").pop();
+            const aA=a.game.away_abbr||a.game.away.split(" ").pop();
+            return (
+              <div key={a.game.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",borderRadius:8,background:SURFACE2,marginBottom:4,opacity:0.5}}>
+                <span style={{fontSize:11,color:TEXT2}}>{hA} vs {aA}</span>
+                <span style={{fontSize:10,color:TEXT3}}>{a.reason}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div style={{fontSize:9,color:TEXT3,marginTop:"1rem",lineHeight:1.6}}>
+        Odds padrão O/U: -110 (1.91x) · Modelo para fins analíticos
+      </div>
+    </div>
+  );
+}
+
+// ── AccuracyReport ───────────────────────────────────────────────
+function AccuracyReport({schedule, weekDates, selDate, savedOddsMap}) {
+  const dayGames=(schedule[selDate]||[]).filter(g=>g.status==="Final");
+  const weekGames=weekDates.flatMap(d=>(schedule[d]||[]).filter(g=>g.status==="Final"));
+
+  const countHits=games=>{
+    const wo=games.filter(g=>!!getGameStats(g,savedOddsMap).overUnder);
+    const h=wo.filter(g=>getGameStats(g,savedOddsMap).result==="hit");
+    return {hits:h.length,total:wo.length};
+  };
+
+  const day=countHits(dayGames), week=countHits(weekGames);
+  if(day.total===0&&week.total===0) return null;
+
+  const pct=(h,t)=>t>0?Math.round((h/t)*100):0;
+
+  return (
+    <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,padding:"1rem 1.25rem",marginBottom:"1.25rem",display:"flex",gap:"1.5rem",alignItems:"center"}}>
+      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",flexShrink:0}}>Precisão O/U</div>
+      {day.total>0&&(
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div>
+            <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>Hoje</div>
+            <div style={{fontSize:18,fontWeight:800,color:pct(day.hits,day.total)>=50?HIT_COLOR:MISS_COLOR}}>{day.hits}/{day.total}</div>
+            <div style={{fontSize:9,color:TEXT3}}>{pct(day.hits,day.total)}%</div>
+          </div>
+          <div style={{width:1,height:36,background:BORDER}}/>
+        </div>
+      )}
+      {week.total>0&&(
+        <div>
+          <div style={{fontSize:9,color:TEXT3,marginBottom:2}}>Semana</div>
+          <div style={{fontSize:18,fontWeight:800,color:pct(week.hits,week.total)>=50?HIT_COLOR:MISS_COLOR}}>{week.hits}/{week.total}</div>
+          <div style={{fontSize:9,color:TEXT3}}>{pct(week.hits,week.total)}%</div>
+        </div>
+      )}
+      {week.total>0&&(
+        <div style={{flex:1,height:6,background:SURFACE2,borderRadius:3,overflow:"hidden",maxWidth:120}}>
+          <div style={{width:`${pct(week.hits,week.total)}%`,height:"100%",background:pct(week.hits,week.total)>=50?HIT_COLOR:MISS_COLOR,borderRadius:3}}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ScoreBar ─────────────────────────────────────────────────────
+function ScoreBar({above,total}) {
+  const pct=total>0?(above/total)*100:0, col=pct>=50?GREEN:NBA_RED;
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:6}}>
+      <div style={{flex:1,height:4,background:SURFACE2,borderRadius:2,overflow:"hidden"}}>
+        <div style={{width:`${pct}%`,height:"100%",background:col,borderRadius:2}}/>
+      </div>
+      <span style={{fontSize:11,fontWeight:500,color:col,minWidth:32,textAlign:"right"}}>{above}/{total}</span>
+    </div>
+  );
+}
+
+// ── OddsPanel ────────────────────────────────────────────────────
+function OddsPanel({proj,overUnder,spread,result,realTotal}) {
+  if(!overUnder) return null;
+  const diff=proj-overUnder;
+  const col=Math.abs(diff)>=3?(diff>0?GREEN:NBA_RED):TEXT2;
+  return (
+    <div style={{background:SURFACE2,border:`1px solid ${BORDER}`,borderRadius:10,padding:"1rem",marginTop:"1rem"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}}>
+        <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em"}}>Odds DraftKings</div>
+        {result&&(
+          <div style={{padding:"2px 10px",borderRadius:20,background:result==="hit"?"rgba(0,200,83,0.15)":"rgba(200,16,46,0.15)",border:`1px solid ${result==="hit"?"rgba(0,200,83,0.4)":"rgba(200,16,46,0.4)"}`}}>
+            <span style={{fontSize:10,fontWeight:700,color:result==="hit"?HIT_COLOR:MISS_COLOR}}>
+              {result==="hit"?"✓ Acerto":"✗ Erro"} · Total real: {realTotal} pts
+            </span>
+          </div>
+        )}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:"0.75rem"}}>
+        {[["Linha O/U",overUnder.toFixed(1)],["Projeção PPG",proj.toFixed(1)],["Diferença",(diff>0?"+":"")+diff.toFixed(1)]].map(([l,v],i)=>(
+          <div key={l} style={{textAlign:"center"}}>
+            <div style={{fontSize:9,color:TEXT3,marginBottom:3}}>{l}</div>
+            <div style={{fontSize:16,fontWeight:700,color:i===2?col:TEXT}}>{v}</div>
+          </div>
+        ))}
+      </div>
+      {!result&&(
+        <div style={{display:"flex",justifyContent:"center",gap:8}}>
+          <div style={{padding:"3px 12px",borderRadius:20,background:diff>0?"rgba(0,200,83,0.12)":"rgba(200,16,46,0.12)",border:`1px solid ${diff>0?"rgba(0,200,83,0.3)":"rgba(200,16,46,0.3)"}`}}>
+            <span style={{fontSize:11,fontWeight:700,color:diff>0?GREEN:NBA_RED}}>PPG sugere {diff>0?"OVER":"UNDER"} {overUnder.toFixed(1)}</span>
+          </div>
+          {spread&&<div style={{padding:"3px 12px",borderRadius:20,background:SURFACE,border:`1px solid ${BORDER}`}}>
+            <span style={{fontSize:11,color:TEXT2}}>Spread: {spread}</span>
+          </div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── HistoryPanel ─────────────────────────────────────────────────
+// CORREÇÃO: recebe gameDate e passa para a API para excluir jogos
+// ocorridos no mesmo dia ou depois — evita look-ahead bias
+function HistoryPanel({homeId,awayId,matchupAvg,homeAbbr,awayAbbr,gameDate}) {
+  const [data,setData]=useState(null);
+  const [loading,setLoading]=useState(false);
+
+  useEffect(()=>{
+    if(!homeId||!awayId||!gameDate) return;
+    setLoading(true);
+    fetch(`/api/history?home_id=${homeId}&away_id=${awayId}&matchup_avg=${matchupAvg}&game_date=${gameDate}`)
+      .then(r=>r.json()).then(d=>{setData(d);setLoading(false);})
+      .catch(()=>setLoading(false));
+  },[homeId,awayId,matchupAvg,gameDate]);
+
+  return (
+    <div style={{borderTop:`1px solid ${BORDER}`,paddingTop:"1.25rem",marginTop:"1rem"}}>
+      <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:"1rem"}}>
+        jogos acima da média do confronto — {matchupAvg.toFixed(1)} pts
+      </div>
+      {loading&&<div style={{fontSize:11,color:TEXT3}}>Carregando histórico...</div>}
+      {!loading&&!data&&<div style={{fontSize:11,color:TEXT3}}>Histórico indisponível</div>}
+      {data&&[
+        {label:`Temporada (${data.home.total}j)`,hA:data.home.above,aA:data.away.above,hn:data.home.total,an:data.away.total},
+        {label:"Últimos 5 jogos",hA:data.home.last5.above,aA:data.away.last5.above,hn:data.home.last5.total,an:data.away.last5.total},
+      ].map(({label,hA,aA,hn,an})=>(
+        <div key={label} style={{marginBottom:"0.85rem"}}>
+          <div style={{fontSize:10,color:TEXT2,marginBottom:6,fontWeight:500}}>{label}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 36px 1fr",gap:8,alignItems:"center"}}>
+            <div><div style={{fontSize:11,color:TEXT3,marginBottom:4}}>{homeAbbr}</div><ScoreBar above={hA} total={hn}/></div>
+            <div style={{textAlign:"center",fontSize:9,color:TEXT3}}>vs</div>
+            <div><div style={{fontSize:11,color:TEXT3,marginBottom:4}}>{awayAbbr}</div><ScoreBar above={aA} total={an}/></div>
+          </div>
+        </div>
+      ))}
+      {data&&<div style={{fontSize:9,color:TEXT3,marginTop:4}}>Dados reais da temporada ESPN · excluindo jogos a partir de {gameDate}</div>}
+    </div>
+  );
+}
+
+// ── EditModal ────────────────────────────────────────────────────
+function EditModal({game,onSave,onClose}) {
+  const [hs,setHs]=useState(game.hs??"");
+  const [vs,setVs]=useState(game.vs??"");
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}>
+      <div style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:12,padding:"1.5rem",width:300}}>
+        <div style={{height:3,background:`linear-gradient(90deg,${NBA_BLUE},${NBA_RED})`,borderRadius:2,marginBottom:"1.25rem"}}/>
+        <div style={{fontSize:11,color:TEXT2,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:"1.25rem",textAlign:"center"}}>Inserir placar final</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 24px 1fr",alignItems:"center",gap:8,marginBottom:"1.5rem"}}>
+          {[["home",game.home_abbr||game.home.split(" ").pop(),hs,setHs],["away",game.away_abbr||game.away.split(" ").pop(),vs,setVs]].map(([side,label,val,set])=>(
+            <div key={side} style={{textAlign:"center"}}>
+              <div style={{fontSize:11,color:TEXT2,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</div>
+              <input type="number" value={val} onChange={e=>set(e.target.value)}
+                style={{width:"100%",background:SURFACE2,color:TEXT,border:`1px solid ${BORDER}`,borderRadius:8,padding:"10px 8px",fontSize:22,fontWeight:700,textAlign:"center"}}/>
+            </div>
+          ))}
+          <div style={{textAlign:"center",color:TEXT3,fontSize:14,paddingTop:20}}>×</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onClose} style={{flex:1,background:"transparent",color:TEXT2,border:`1px solid ${BORDER}`,borderRadius:8,padding:"10px",fontSize:13,cursor:"pointer"}}>Cancelar</button>
+          <button onClick={()=>{if(hs!==""&&vs!=="")onSave(Number(hs),Number(vs));}} disabled={hs===""||vs===""}
+            style={{flex:1,background:NBA_BLUE,color:NBA_WHITE,border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:600,cursor:hs===""||vs===""?"not-allowed":"pointer",opacity:hs===""||vs===""?0.4:1}}>
+            Confirmar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MatchupCard ──────────────────────────────────────────────────
+// CORREÇÃO: recebe gameDate e repassa para HistoryPanel
+function MatchupCard({game,savedOddsMap,onEdit,gameDate}) {
+  const {hPpg,aPpg,avg,proj,realTotal,result,overUnder,spread}=getGameStats(game,savedOddsMap);
+  if(!hPpg||!aPpg) return null;
+
+  const isFinal=game.status==="Final";
+  const isLive=!isFinal&&game.status!=="Agendado";
+  const hWin=isFinal&&game.hs>game.vs;
+  const aWin=isFinal&&game.vs>game.hs;
+  const hAbbr=game.home_abbr||game.home.split(" ").pop();
+  const aAbbr=game.away_abbr||game.away.split(" ").pop();
+  const accentColor=isFinal&&result==="hit"?HIT_COLOR:isFinal&&result==="miss"?MISS_COLOR:isLive?GREEN:null;
+  const cardBorder=accentColor?`1px solid ${accentColor}33`:`1px solid ${BORDER}`;
+
+  return (
+    <div style={{background:SURFACE,border:cardBorder,borderRadius:12,overflow:"hidden",marginBottom:"1rem"}}>
+      <div style={{height:3,background:isFinal&&result==="hit"?HIT_COLOR:isFinal&&result==="miss"?MISS_COLOR:isLive?GREEN:SURFACE2}}/>
+      <div style={{padding:"1.25rem"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.25rem"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            {isLive&&<span style={{width:7,height:7,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>}
+            <span style={{fontSize:10,fontWeight:600,color:isFinal&&result==="hit"?HIT_COLOR:isFinal&&result==="miss"?MISS_COLOR:isLive?GREEN:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em"}}>{game.status}</span>
+          </div>
+          <button onClick={()=>onEdit(game)} style={{background:"transparent",color:isFinal?TEXT3:NBA_BLUE,border:`1px solid ${isFinal?BORDER:NBA_BLUE}`,borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:500,cursor:"pointer"}}>
+            {isFinal?"✎ editar":"+ placar"}
+          </button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:8,marginBottom:"1.25rem"}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:28,fontWeight:800,color:hWin?NBA_WHITE:isFinal?TEXT2:TEXT,letterSpacing:"-0.5px",lineHeight:1}}>{hAbbr}</div>
+            <div style={{fontSize:10,color:TEXT2,marginTop:4}}>{game.home}</div>
+            <div style={{fontSize:12,color:TEXT3,marginTop:2}}>{hPpg.toFixed(1)} PPG</div>
+            {game.home_record&&<div style={{fontSize:10,color:TEXT3}}>{game.home_record}</div>}
+            {(isFinal||isLive)&&<div style={{fontSize:30,fontWeight:800,color:hWin?NBA_WHITE:TEXT2,marginTop:8,lineHeight:1}}>{game.hs}</div>}
+          </div>
+          <div style={{textAlign:"center",padding:"0 4px"}}>
+            <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>média</div>
+            <div style={{fontSize:32,fontWeight:800,color:NBA_BLUE,lineHeight:1}}>{avg.toFixed(1)}</div>
+            <div style={{fontSize:9,color:TEXT3,marginTop:6}}>pts/time</div>
+            <div style={{marginTop:8,padding:"4px 10px",background:SURFACE2,borderRadius:6,border:`1px solid ${BORDER}`}}>
+              <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>total proj.</div>
+              <div style={{fontSize:14,fontWeight:700,color:TEXT}}>{Math.round(proj)}</div>
+            </div>
+            {isFinal&&realTotal!=null&&(
+              <div style={{marginTop:6,padding:"4px 10px",background:result==="hit"?"rgba(0,200,83,0.1)":"rgba(200,16,46,0.1)",borderRadius:6,border:`1px solid ${result==="hit"?"rgba(0,200,83,0.3)":"rgba(200,16,46,0.3)"}`}}>
+                <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>total real</div>
+                <div style={{fontSize:14,fontWeight:700,color:result==="hit"?HIT_COLOR:MISS_COLOR}}>{realTotal}</div>
+              </div>
+            )}
+          </div>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:28,fontWeight:800,color:aWin?NBA_WHITE:isFinal?TEXT2:TEXT,letterSpacing:"-0.5px",lineHeight:1}}>{aAbbr}</div>
+            <div style={{fontSize:10,color:TEXT2,marginTop:4}}>{game.away}</div>
+            <div style={{fontSize:12,color:TEXT3,marginTop:2}}>{aPpg.toFixed(1)} PPG</div>
+            {game.away_record&&<div style={{fontSize:10,color:TEXT3}}>{game.away_record}</div>}
+            {(isFinal||isLive)&&<div style={{fontSize:30,fontWeight:800,color:aWin?NBA_WHITE:TEXT2,marginTop:8,lineHeight:1}}>{game.vs}</div>}
+          </div>
+        </div>
+        <OddsPanel proj={proj} overUnder={overUnder} spread={spread} result={result} realTotal={realTotal}/>
+        {game.home_id&&game.away_id&&(
+          <HistoryPanel
+            homeId={game.home_id}
+            awayId={game.away_id}
+            matchupAvg={avg}
+            homeAbbr={hAbbr}
+            awayAbbr={aAbbr}
+            gameDate={gameDate}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── App ──────────────────────────────────────────────────────────
+function App() {
+  const weekDates=getWeekDates();
+  const todayStr=getBrazilToday();
+  const [selDate,setSelDate]=useState(todayStr);
+  const [schedule,setSchedule]=useState({});
+  const [savedOddsMap,setSavedOddsMap]=useState({});
+  const [editing,setEditing]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [updatedAt,setUpdatedAt]=useState(null);
+
+  useEffect(()=>{
+    let cancelled=false;
+    async function load(){
+      setLoading(true);
+      try{
+        const r=await fetch("/api/games?bust="+Date.now());
+        const d=await r.json();
+        if(!cancelled&&d.schedule){
+          setSchedule(d.schedule);
+          setUpdatedAt(new Date());
+          const allGames=Object.values(d.schedule).flat();
+
+          // CORREÇÃO: só tenta salvar jogos Agendados (PPG ainda limpo)
+          await saveOddsToKV(allGames);
+
+          const finalIds=allGames.filter(g=>g.status==="Final"&&!g.over_under).map(g=>String(g.id));
+          if(finalIds.length){
+            const oddsMap=await loadOddsFromKV(finalIds);
+            if(!cancelled) setSavedOddsMap(prev=>({...prev,...oddsMap}));
+          }
+        }
+      }catch(e){console.error(e);}
+      finally{if(!cancelled)setLoading(false);}
+    }
+    load();
+    const id=setInterval(load,30*60*1000);
+    return()=>{cancelled=true;clearInterval(id);};
+  },[]);
+
+  const selGames=schedule[selDate]||[];
+  const finals=selGames.filter(g=>g.status==="Final").length;
+  const maxProj=Math.max(...selGames.map(g=>(g.home_ppg||PPG_FB[g.home]||0)+(g.away_ppg||PPG_FB[g.away]||0)).filter(Boolean),0);
+
+  function handleSave(hs,vs){
+    setSchedule(prev=>({...prev,[selDate]:prev[selDate].map(g=>g.id===editing.id?{...g,hs,vs,status:"Final"}:g)}));
+    setEditing(null);
+  }
+
+  return (
+    <div style={{background:BG,minHeight:"100vh",fontFamily:"inherit"}}>
+      {editing&&<EditModal game={editing} onSave={handleSave} onClose={()=>setEditing(null)}/>}
+      <div style={{background:SURFACE,borderBottom:`1px solid ${BORDER}`}}>
+        <div style={{maxWidth:1800,margin:"0 auto",padding:"1rem 2rem 0"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{display:"flex",borderRadius:4,overflow:"hidden"}}>
+                <div style={{width:8,height:28,background:NBA_BLUE}}/>
+                <div style={{width:8,height:28,background:NBA_RED}}/>
+              </div>
+              <div>
+                <div style={{fontSize:9,color:TEXT2,textTransform:"uppercase",letterSpacing:"0.15em",fontWeight:600}}>NBA · 2025-26</div>
+                <div style={{fontSize:28,fontWeight:800,color:TEXT,letterSpacing:"-0.5px"}}>Análise de Confrontos</div>
+              </div>
+            </div>
+            <div style={{textAlign:"right",fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.08em"}}>
+              {updatedAt?"ESPN · "+updatedAt.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"carregando..."}
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+            {weekDates.map(d=>{
+              const isToday=d===todayStr, isSel=d===selDate;
+              const games=schedule[d]||[];
+              const fin=games.filter(g=>g.status==="Final").length, tot=games.length;
+              const dayName=DAYS_PT[new Date(d+"T12:00:00").getDay()];
+              const dayNum=new Date(d+"T12:00:00").getDate();
+              const dayHits=games.filter(g=>g.status==="Final"&&getGameStats(g,savedOddsMap).result==="hit").length;
+              const dayWithOdds=games.filter(g=>g.status==="Final"&&!!getGameStats(g,savedOddsMap).overUnder).length;
+              return (
+                <button key={d} onClick={()=>setSelDate(d)} style={{background:isSel?NBA_BLUE:"transparent",color:isSel?NBA_WHITE:isToday?NBA_BLUE:TEXT2,border:"none",borderBottom:isSel?`3px solid ${NBA_RED}`:isToday?`3px solid ${NBA_BLUE}`:"3px solid transparent",padding:"8px 4px 10px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderRadius:"4px 4px 0 0"}}>
+                  <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>{dayName}</span>
+                  <span style={{fontSize:15,fontWeight:800}}>{dayNum}</span>
+                  <span style={{fontSize:9,color:isSel?"rgba(255,255,255,0.6)":TEXT3}}>{tot>0?(fin>0?`${fin}/${tot}`:`${tot}j`):"—"}</span>
+                  {dayWithOdds>0&&<span style={{fontSize:8,color:isSel?"rgba(255,255,255,0.5)":dayHits/dayWithOdds>=0.5?"rgba(0,200,83,0.8)":"rgba(200,16,46,0.8)"}}>{dayHits}/{dayWithOdds}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 460px",gap:0,alignItems:"start",width:"100%"}}>
+        {/* Coluna principal */}
+        <div style={{maxWidth:760,margin:"0 auto",width:"100%",padding:"1.25rem 0 1.25rem 2rem"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:"1.25rem"}}>
+            {[["Jogos",selGames.length||"—"],["Finalizados",finals||"—"],["Maior total proj.",maxProj?`${Math.round(maxProj)} pts`:"—"]].map(([l,v])=>(
+              <div key={l} style={{background:SURFACE,border:`1px solid ${BORDER}`,borderRadius:10,padding:"0.75rem 1rem"}}>
+                <div style={{fontSize:9,color:TEXT3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>{l}</div>
+                <div style={{fontSize:20,fontWeight:800,color:TEXT}}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <AccuracyReport schedule={schedule} weekDates={weekDates} selDate={selDate} savedOddsMap={savedOddsMap}/>
+          {loading&&<div style={{textAlign:"center",padding:"3rem 0",color:TEXT3,fontSize:13}}>Carregando jogos...</div>}
+          {!loading&&selGames.length===0&&<div style={{textAlign:"center",padding:"3rem 0",color:TEXT3,fontSize:13}}>Nenhum jogo para este dia.</div>}
+          {/* CORREÇÃO: passa selDate como gameDate para cada card */}
+          {selGames.map(g=><MatchupCard key={g.id} game={g} savedOddsMap={savedOddsMap} onEdit={setEditing} gameDate={selDate}/>)}
+          <div style={{fontSize:9,color:TEXT3,marginTop:"1rem",textAlign:"center",letterSpacing:"0.05em"}}>
+            Jogos, PPG, odds e histórico: ESPN API · Atualização automática a cada 30 min
+          </div>
+        </div>
+        {/* Sidebar — simulador */}
+        <div style={{position:"sticky",top:0,height:"100vh",overflowY:"auto",borderLeft:`1px solid ${BORDER}`,background:SURFACE}}>
+          <div style={{padding:"1.25rem"}}>
+            <BettingSimulator schedule={schedule} weekDates={weekDates} savedOddsMap={savedOddsMap} selDate={selDate}/>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
