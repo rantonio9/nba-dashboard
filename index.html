@@ -31,7 +31,7 @@ const SPORTS={
   nba:{id:"nba",label:"NBA",icon:"🏀",primary:NBA_BLUE,secondary:NBA_RED,season:"2025-26",
     statLabel:"PPG",avgLabel:"média",projLabel:"total proj.",realLabel:"total real",
     divLabel:"pts",minDiv:5,ppgKey:"home_ppg"},
-  bra:{id:"bra",label:"Brasileirão",icon:"BR",primary:BRA_GREEN,secondary:BRA_YELLOW,season:"2025",
+  bra:{id:"bra",label:"Brasileirão",icon:"BRA",primary:BRA_GREEN,secondary:BRA_YELLOW,season:"2025",
     statLabel:"GPJ",avgLabel:"média",projLabel:"gols proj.",realLabel:"gols reais",
     divLabel:"gl",minDiv:0.3,ppgKey:"home_ppg"},
 };
@@ -137,14 +137,14 @@ function calcRS(sg,ou,real){if(!sg||!ou||real==null)return null;if(sg==="NÃO AP
 
 // ── Hist cache ─────────────────────────────────────────────────────
 const HC={};
-async function fetchHist(hid,aid,avg,sport,baseRate){
+async function fetchHist(hid,aid,avg,sport,baseRate,gameDate){
   const ep=sport.id==="bra"?"/api/history-soccer":"/api/history";
-  // CORREÇÃO: passa game_date para history NBA evitar look-ahead bias
-  const k=`${sport.id}_${hid}_${aid}_${avg}_${baseRate||""}`;
+  const k=`${sport.id}_${hid}_${aid}_${avg}_${baseRate||""}_${gameDate||""}`;
   if(HC[k])return HC[k];
   try{
     const br=sport.id==="bra"&&baseRate?`&league_base_rate=${baseRate}`:"";
-    const r=await fetch(`${ep}?home_id=${hid}&away_id=${aid}&matchup_avg=${avg}${br}`);
+    const gd=sport.id!=="bra"&&gameDate?`&game_date=${gameDate}`:"";
+    const r=await fetch(`${ep}?home_id=${hid}&away_id=${aid}&matchup_avg=${avg}${br}${gd}`);
     const d=await r.json();HC[k]=d;return d;
   }catch{return null;}
 }
@@ -512,7 +512,6 @@ function RulesAnalysisNBA({schedule,dates,om,sport}){
     setLoading(true);
     Promise.all(finals.map(async g=>{
       const{proj,overUnder,realTotal,avg}=getGameStats(g,om,sport);
-      // CORREÇÃO: passa game_date ao fetchHist para evitar look-ahead bias
       const gameDate=dates.find(d=>(schedule[d]||[]).some(x=>x.id===g.id))||"";
       const hist=g.home_id&&g.away_id?await fetchHist(g.home_id,g.away_id,avg,sport,null,gameDate):null;
       const sg1=s1(proj,overUnder),sg2=s2(proj,overUnder,hist),sg3=s3(hist),sg4=s4(proj,overUnder,hist),sg5=s5(proj,overUnder,hist,sport.minDiv);
@@ -745,8 +744,12 @@ function App(){
           <div style={{display:"flex",alignItems:"center",gap:14}}>
             <div style={{display:"flex",border:`1px solid ${BORDER}`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
               {Object.values(SPORTS).map(sp=>(
-                <button key={sp.id} onClick={()=>{setSportId(sp.id);setActiveTab("jogos");}} style={{padding:"7px 16px",fontSize:12,fontWeight:sportId===sp.id?700:400,background:sportId===sp.id?sp.primary:"transparent",color:sportId===sp.id?"#fff":TEXT2,border:"none",cursor:"pointer",borderRight:sp.id==="nba"?`1px solid ${BORDER}`:"none"}}>
-                  {sp.icon} {sp.label}
+                <button key={sp.id} onClick={()=>{setSportId(sp.id);setActiveTab("jogos");}} style={{padding:"7px 16px",fontSize:12,fontWeight:sportId===sp.id?700:400,background:sportId===sp.id?sp.primary:"transparent",color:sportId===sp.id?"#fff":TEXT2,border:"none",cursor:"pointer",borderRight:sp.id==="nba"?`1px solid ${BORDER}`:"none",display:"flex",alignItems:"center",gap:6}}>
+                  {sp.id==="nba"
+                    ? <span style={{fontSize:14}}>🏀</span>
+                    : <span style={{fontSize:9,fontWeight:800,padding:"1px 4px",borderRadius:3,background:sportId===sp.id?"rgba(255,255,255,0.25)":"rgba(0,102,51,0.4)",color:sportId===sp.id?"#fff":BRA_GREEN,letterSpacing:"0.05em",border:`1px solid ${sportId===sp.id?"rgba(255,255,255,0.3)":"rgba(0,102,51,0.5)"}`}}>BRA</span>
+                  }
+                  {sp.label}
                 </button>
               ))}
             </div>
