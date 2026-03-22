@@ -31,7 +31,7 @@ const SPORTS={
   nba:{id:"nba",label:"NBA",icon:"🏀",primary:NBA_BLUE,secondary:NBA_RED,season:"2025-26",
     statLabel:"PPG",avgLabel:"média",projLabel:"total proj.",realLabel:"total real",
     divLabel:"pts",minDiv:5,ppgKey:"home_ppg"},
-  bra:{id:"bra",label:"Brasileirão",icon:"BRA",primary:BRA_GREEN,secondary:BRA_YELLOW,season:"2025",
+  bra:{id:"bra",label:"Brasileirão",icon:"🇧🇷",primary:BRA_GREEN,secondary:BRA_YELLOW,season:"2025",
     statLabel:"GPJ",avgLabel:"média",projLabel:"gols proj.",realLabel:"gols reais",
     divLabel:"gl",minDiv:0.3,ppgKey:"home_ppg"},
 };
@@ -132,7 +132,7 @@ function s1(p,ou){if(!ou)return null;return p>ou?"OVER":"UNDER";}
 function s2(p,ou,h){const b=s1(p,ou);if(!b||!ou||!h)return null;const{above,below,total}=countFields(h);if(total<3)return null;const cd=above>=3?"OVER":below>=3?"UNDER":null;if(!cd||cd!==b)return"NÃO APOSTE";return b;}
 function s3(h){if(!h)return null;const{above,below,total}=countFields(h);if(total<3)return null;if(above>=3)return"OVER";if(below>=3)return"UNDER";return"NÃO APOSTE";}
 function s4(p,ou,h){if(!ou||!h)return null;const{above,below,total}=countFields(h);if(total<3)return null;const ppgDir=p>ou?"OVER":"UNDER";const fieldDir=above>=3?"OVER":below>=3?"UNDER":null;if(!fieldDir)return s3(h);if(fieldDir!==ppgDir)return fieldDir;return"NÃO APOSTE";}
-function s5(p,ou,h,md){const b=s1(p,ou);if(!b||!ou||!h)return null;const{above,below,total}=countFields(h);if(total<3)return null;if(Math.abs(p-ou)<md)return"NÃO APOSTE";const cd=above>=3?"OVER":below>=3?"UNDER":null;if(!cd||cd!==b)return"NÃO APOSTE";return b;}
+function s5(p,ou,h){const b=s1(p,ou);if(!b||!ou||!h)return null;const{above,below,total}=countFields(h);if(total<2)return null;const cd=above>=2?"OVER":below>=2?"UNDER":null;if(!cd||cd!==b)return"NÃO APOSTE";return b;}
 function calcRS(sg,ou,real){if(!sg||!ou||real==null)return null;if(sg==="NÃO APOSTE")return"skip";return sg==="OVER"?(real>ou?"hit":"miss"):(real<=ou?"hit":"miss");}
 
 // ── Hist cache ─────────────────────────────────────────────────────
@@ -514,7 +514,7 @@ function RulesAnalysisNBA({schedule,dates,om,sport}){
       const{proj,overUnder,realTotal,avg}=getGameStats(g,om,sport);
       const gameDate=dates.find(d=>(schedule[d]||[]).some(x=>x.id===g.id))||"";
       const hist=g.home_id&&g.away_id?await fetchHist(g.home_id,g.away_id,avg,sport,null,gameDate):null;
-      const sg1=s1(proj,overUnder),sg2=s2(proj,overUnder,hist),sg3=s3(hist),sg4=s4(proj,overUnder,hist),sg5=s5(proj,overUnder,hist,sport.minDiv);
+      const sg1=s1(proj,overUnder),sg2=s2(proj,overUnder,hist),sg3=s3(hist),sg4=s4(proj,overUnder,hist),sg5=s5(proj,overUnder,hist);
       const r1=calcRS(sg1,overUnder,realTotal),r2=calcRS(sg2,overUnder,realTotal),r3=calcRS(sg3,overUnder,realTotal),r4=calcRS(sg4,overUnder,realTotal),r5=calcRS(sg5,overUnder,realTotal);
       const hA=g.home_abbr||g.home.split(" ").pop(),aA=g.away_abbr||g.away.split(" ").pop();
       const fields=hist?[{label:`${hA} temp.`,above:hist.home.above,total:hist.home.total},{label:`${hA} ult5`,above:hist.home.last5.above,total:hist.home.last5.total},{label:`${aA} def.t`,above:hist.away.above,total:hist.away.total},{label:`${aA} def.5`,above:hist.away.last5.above,total:hist.away.last5.total}]:null;
@@ -530,7 +530,7 @@ function RulesAnalysisNBA({schedule,dates,om,sport}){
   const best=stats.map((s,i)=>({i:i+1,pct:pct(s[0],s[1])})).sort((a,b)=>b.pct-a.pct)[0]?.i;
   const sl=sport.statLabel;
   const LABELS=["Regra 1","Regra 2","Regra 3","Regra 4","Regra 5"];
-  const DESCS=[`Proj ${sl} vs Odd`,`${sl} + ≥3 campos`,`Só campos`,`Campos árbitro`,`Convergência forte`];
+  const DESCS=[`Proj ${sl} vs Odd`,`${sl} + ≥3 campos`,`Só campos`,`Campos árbitro`,`${sl} + ≥2 campos`];
 
   if(loading)return<div style={{padding:"3rem",textAlign:"center",color:TEXT3,fontSize:13}}>Carregando...</div>;
   if(!rows.length)return<div style={{padding:"3rem",textAlign:"center",color:TEXT3,fontSize:13}}>Nenhum jogo com odds disponíveis.</div>;
@@ -744,12 +744,8 @@ function App(){
           <div style={{display:"flex",alignItems:"center",gap:14}}>
             <div style={{display:"flex",border:`1px solid ${BORDER}`,borderRadius:8,overflow:"hidden",flexShrink:0}}>
               {Object.values(SPORTS).map(sp=>(
-                <button key={sp.id} onClick={()=>{setSportId(sp.id);setActiveTab("jogos");}} style={{padding:"7px 16px",fontSize:12,fontWeight:sportId===sp.id?700:400,background:sportId===sp.id?sp.primary:"transparent",color:sportId===sp.id?"#fff":TEXT2,border:"none",cursor:"pointer",borderRight:sp.id==="nba"?`1px solid ${BORDER}`:"none",display:"flex",alignItems:"center",gap:6}}>
-                  {sp.id==="nba"
-                    ? <span style={{fontSize:14}}>🏀</span>
-                    : <span style={{fontSize:9,fontWeight:800,padding:"1px 4px",borderRadius:3,background:sportId===sp.id?"rgba(255,255,255,0.25)":"rgba(0,102,51,0.4)",color:sportId===sp.id?"#fff":BRA_GREEN,letterSpacing:"0.05em",border:`1px solid ${sportId===sp.id?"rgba(255,255,255,0.3)":"rgba(0,102,51,0.5)"}`}}>BRA</span>
-                  }
-                  {sp.label}
+                <button key={sp.id} onClick={()=>{setSportId(sp.id);setActiveTab("jogos");}} style={{padding:"7px 16px",fontSize:12,fontWeight:sportId===sp.id?700:400,background:sportId===sp.id?sp.primary:"transparent",color:sportId===sp.id?"#fff":TEXT2,border:"none",cursor:"pointer",borderRight:sp.id==="nba"?`1px solid ${BORDER}`:"none"}}>
+                  {sp.icon} {sp.label}
                 </button>
               ))}
             </div>
